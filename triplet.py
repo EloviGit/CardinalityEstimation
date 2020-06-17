@@ -4,10 +4,9 @@
 import numpy as np
 import pandas as pd
 import pickle
+from utils import TtoN, NtoT
 
 q = 2.0
-m = 3
-
 Range = 12
 Shift = 3
 Size = 511
@@ -18,6 +17,7 @@ Size = 511
 
 def F1(i):
     return np.exp(-1/(2**(i+1))) - np.exp(-1/(2**i))
+
 
 def CodebookGen(Range, Shift, Size, evalf):
     Square = Range * Range
@@ -35,26 +35,19 @@ def CodebookGen(Range, Shift, Size, evalf):
     nonneg = [codebook[i] for i in range(Size) if codebook[i][0] >= 0 and codebook[i][1] >= 0 and codebook[i][2] >= 0]
     return codebook, nonneg
 
-def TtoN(i, j, k, Range, Shift=0):
-    # tuple to number
-    return (i+Shift)*Range*Range + (j+Shift)*Range + (k+Shift)
-
-def NtoT(s, Range, Shift=0):
-    # number to tuple
-    Square = Range*Range
-    return int(s/Square) - Shift, ((int(s/Range)) % Range) - Shift, (s % Range) - Shift
-
 
 Codebook, Nonneg = CodebookGen(Range, Shift, Size, F1)
 filestr = 'codebooks/Codebook-' + str(Size)
+Save = False
 
-print(Codebook)
-print(Nonneg)
 
-#with open(filestr + '.pkl', "wb") as file:
-#    pickle.dump(Codebook, file, True)
-#
-#Codebookdf = pd.DataFrame(Codebook)
-#Codebookdf.to_csv(filestr + '.csv')
-#Nonnegdf = pd.DataFrame(Nonneg)
-#Nonnegdf.to_csv(filestr + '-nonneg.csv')
+if Save:
+    with open(filestr + '.pkl', "wb") as file:
+        pickle.dump(Codebook, file, True)
+    Codebookdf = pd.DataFrame(Codebook)
+    Codebookdf.to_csv(filestr + '.csv')
+    Nonnegdf = pd.DataFrame(Nonneg)
+    Nonnegdf.to_csv(filestr + '-nonneg.csv')
+else:
+    print(Codebook)
+    print(Nonneg)
