@@ -383,7 +383,9 @@ def ArtifCodebook568(ptriple):
 
 
 def ArtifCodebook393(ptriple):
-    # 393 states, one of them is inf, inf, inf, excluded when counting sizes
+    # 394 states, one of them is inf, inf, inf, excluded when counting sizes
+    # (-2, -1, 0, 1, 2, 4)
+    # 6*6*6 + 3*7*7+3*9+1
     newtripl = [0, 0, 0]
     infN = 0
     CoDict0 = {-1:-1, 0:0, 1:1, 2:2, 3:4, 4:4}
