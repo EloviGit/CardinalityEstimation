@@ -39,9 +39,8 @@ def myplot(mSketches, datname, pN, pr, mtitle="", reference=True):
         plt.plot(x, x, color="black")
     for sketch in mSketches:
         datHist = unpack(pN, sketch.snapshotHistdf, datname, sketch.snapshotHist_inx)
-        plt.plot(x, datHist, color=sketch.color)
-    names = [sketch.name for sketch in mSketches]
-    plt.legend(names)
+        plt.plot(x, datHist, color=sketch.color, label=sketch.name)
+    plt.legend(loc="upper left")
     plt.title(mtitle)
     plt.savefig("figs/"+VersionStr+"_"+datname+"_"+getTimeString()+"_("+str(pr) + ").png")
     plt.show()
@@ -56,3 +55,12 @@ def NtoT(s, Range, Shift=0):
     # number to tuple
     Square = Range*Range
     return int(s/Square) - Shift, ((int(s/Range)) % Range) - Shift, (s % Range) - Shift
+
+
+def getRandSeriesString(gq, gm, gN, gr):
+    return "RandomSeries/randSeries_%.1f_%06d_%06d_%06d.csv" % (gq, gm, gN, gr)
+
+
+def getPlotTitle(gm, gq, gN, gr, gR):
+    return "m=%d, q=%d, N=%d, %d/%d round" % (gm, gq, gN, gr+1, gR)
+

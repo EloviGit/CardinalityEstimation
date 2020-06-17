@@ -123,3 +123,38 @@ def ac393(ptriple):
 
     changed = newtripl[0] == ptriple[0] and newtripl[1] == ptriple[1] and newtripl[2] == ptriple[2]
     return tuple(newtripl), changed
+
+
+def ac511N(ptriple):
+    # this sketch introduce
+    # (8, 4, 4), (8, 3, 3), (8, 2, 2)
+    # (7, 3, 3), (7, 2, 2), (7, 1, 1)
+    # (6, 2, 2)
+    # times 3, introduce 21 states
+    # (8, 8, 8), (7, 7, 7), (6, 6, 6), (5, 5, 5), (4, 4, 4), (3, 3, 3)
+    # adding in 27 states
+    # and pick the 484 states in the codebook. totalling 511 states
+    i, j, k = ptriple
+    # (i, i, i) for i in [-2, 2] were originaly in the codebook
+    ac511NCodebook = [(-2, -2, -2), (-1, -1, -1), (0, 0, 0),
+                      (1, 1, 1), (2, 2, 2),
+                      (3, 3, 3), (4, 4, 4), (5, 5, 5),
+                      (6, 2, 2), (2, 6, 2), (2, 2, 6),
+                      (7, 1, 1), (1, 7, 1), (1, 1, 7),
+                      (7, 2, 2), (2, 7, 2), (2, 2, 7),
+                      (7, 3, 3), (3, 7, 3), (3, 3, 7),
+                      (8, 2, 2), (2, 8, 2), (2, 2, 8),
+                      (8, 3, 3), (3, 8, 3), (3, 3, 8),
+                      (8, 4, 4), (4, 8, 4), (4, 4, 8),
+                      (6, 6, 6), (7, 7, 7), (8, 8, 8)]
+    for l in range(len(ac511NCodebook)):
+        i2, j2, k2 = ac511NCodebook[l]
+        if i2>=i and j2>=j and k2>=k:
+            newtriple = (i2, j2, k2)
+            break
+    else:
+        newtriple = (Infty, Infty, Infty)
+
+    return newtriple, (newtriple == ptriple)
+
+ac511NSize = 484
