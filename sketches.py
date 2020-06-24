@@ -4,49 +4,71 @@ import pandas as pd
 from utils import *
 import artifCodebooks as ac
 
+scalingfactor = 1000
+scalingfactors = [1, 1000, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27, 1e30]
 
 class Sketch:
-    def __init__(self, pm, pq, pN, pcolor, pname, psnapshotLen=5, prunMaxChange=MaxChange,
+    def __init__(self, pm, pq, pN, pcolor, pname, psnapshotLenNew=0, prunMaxChange=MaxChange,
                  pSnapshotHistexpand:int=1):
         self.name = pname
         self.color = pcolor
         self.m = pm
         self.q = pq
         self.N = pN
-        self.states = np.zeros(pm, dtype=int)
-        self.Mtg = 0
-        self.a = pm
+        self.states = np.zeros(pm, dtype=np.int64)
+        self.Mtg = np.float64(0)
+        self.a = np.float64(pm)
+        self.rega = np.float64(1)
+        self.invrega = np.float64(1)
+        self.mtgScalinglvl = 0
+        self.t = np.float64(0)
 
-        self.runningHist = np.zeros((pm, 2*prunMaxChange), dtype=int)
-        self.runningColStr = ["time"+str(int(i/2)) if i % 2 == 0 else "value"+str(int(i/2))
-                              for i in range(2*prunMaxChange)]
+        self.runningHist = np.zeros((pm, 2*prunMaxChange), dtype=np.float64)
+        self.runningColStr = ["time"+str(int(i/2)) if i%2==0 else "value"+str(int(i/2)) for i in range(2*prunMaxChange)]
         self.runningHist_inx = np.zeros(pm, dtype=int)
         self.runningHistdf = pd.DataFrame()
 
-        self.snapshotLen = psnapshotLen
-        self.snapshotColStr = ["t", "c", "k", "Mtg", "a"]
-        self.snapshot = np.zeros(self.snapshotLen)
-        self.snapshotHist = np.zeros((MaxChange*pm*pSnapshotHistexpand, self.snapshotLen))
+        self.snapshotLen = psnapshotLenNew + 7
+        self.snapshotColStr = ["t", "c", "k", "Mtg", "a", "regA", "invRegA"]
+        self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
+        self.snapshotHist = np.zeros((10000*pSnapshotHistexpand, self.snapshotLen))
         self.snapshotHist_inx: int = 0
         self.snapshotHistdf = pd.DataFrame()
 
     def update(self, c, k, t):
-        # if updated, return True; not updated, return False
-        # remember to update the snapshot
-        # and return a list of coords to updated
         return True, []
 
-    def record(self, cList, t):
+    def updateMtg(self):
+        self.Mtg += self.m/self.a
+        return
+        # if self.Mtg > scalingfactor:
+        #     self.Mtg /= scalingfactor
+        #     self.mtgScalinglvl += 1
+        # self.Mtg += deltaMtg/scalingfactors[self.mtgScalinglvl]
+        # self.floatLogMtg = math.log(self.Mtg)+self.mtgScalinglvl*math.log(scalingfactor)
+
+    def updateA(self, newA):
+        self.a = newA
+        self.rega = newA / self.m
+        self.invrega = 1 / self.rega
+
+    def updateSnapshot(self, t, c, k, newsnapshot):
+            self.snapshot = np.hstack((
+                np.array([t, c, k, self.Mtg, self.a, self.rega, self.invrega]),
+                newsnapshot))
+            self.t = t
+
+    def record(self, cList):
         for c in cList:
-            runningHist_inx_c = int(self.runningHist_inx[c])
-            self.runningHist[c][runningHist_inx_c:runningHist_inx_c+2] = (t, self.states[c])
+            self.runningHist[c][self.runningHist_inx[c]:self.runningHist_inx[c]+2] = (self.t, self.states[c])
             self.runningHist_inx[c] += 2
         self.snapshotHist[self.snapshotHist_inx] = self.snapshot
         self.snapshotHist_inx += 1
 
-    def savehist(self, mode="excel"):
+    def savehist(self, mode="excel", sr=0):
+        # 0 for both, 1 for only the snapshot, 2 for none of them.
         self.runningHistdf = pd.DataFrame(self.runningHist, columns=self.runningColStr)
-        self.snapshotHistdf = pd.DataFrame(self.snapshotHist, columns=self.snapshotColStr)
+        self.snapshotHistdf = pd.DataFrame(self.snapshotHist[0:self.snapshotHist_inx, :], columns=self.snapshotColStr)
         if mode == "excel":
             sWriter = pd.ExcelWriter("TTLHist/"+VersionStr+"_"+self.name+"_"+getTimeString()+".xlsx")
             self.runningHistdf.to_excel(sWriter, "running")
@@ -55,15 +77,24 @@ class Sketch:
         elif mode == "csv":
             self.runningHistdf.to_csv("TTLHist/"+VersionStr+"_"+self.name+"_running_"+getTimeString()+".csv")
             self.snapshotHistdf.to_csv("TTLHist/"+VersionStr+"_"+self.name+"_snapshots_"+getTimeString()+".csv")
+        elif mode == "short":
+            self.snapshotHistdf[["t", "Mtg", "invRegA"]].to_csv("TTLHist/"+VersionStr+"_"+RunStr+"/"
+                                                                +"shortHist_"+self.name+"("+str(sr)+").csv")
+        elif mode == "extracted":
+            pass
 
     def refresh(self):
-        self.states = np.zeros(self.m, dtype=int)
-        self.Mtg = 0
-        self.a = self.m
-        self.runningHist_inx = np.zeros(self.runningHist_inx.shape, dtype=int)
-        self.runningHist = np.zeros(self.runningHist.shape)
-        self.snapshotHist = np.zeros(self.snapshotHist.shape)
+        self.states = np.zeros(self.m, dtype=np.int64)
+        self.Mtg = np.float64(0)
+        self.a = np.float64(self.m)
+        self.rega = np.float64(1)
+        self.invrega = np.float64(1)
+        self.t = np.float64(0)
+        self.mtgScalinglvl = 0
+        self.runningHist_inx = np.zeros(self.runningHist_inx.shape, dtype=np.int)
+        self.runningHist = np.zeros(self.runningHist.shape, dtype=np.float64)
         self.snapshotHist_inx = 0
+        self.snapshotHist = np.zeros(self.snapshotHist.shape, dtype=np.float64)
 
 
 class LLSketch(Sketch):
@@ -72,10 +103,10 @@ class LLSketch(Sketch):
 
     def update(self, c, k, t):
         if k > self.states[c]:
-            self.Mtg += self.m / self.a
-            self.a += np.power(self.q, -k) - np.power(self.q, -self.states[c])
+            self.updateMtg()
+            self.updateA(self.a + np.power(self.q, -k) - np.power(self.q, -self.states[c]))
             self.states[c] = k
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a])
+            self.updateSnapshot(t, c, k, [])
             return True, [c]
         else:
             return False, []
@@ -83,8 +114,8 @@ class LLSketch(Sketch):
 
 class ThrsSketch(Sketch):
     def __init__(self, pm, pq, pN, pUpbd, pcolor='green', pname="Thrs"):
-        mpname = pname+"-"+str(pUpbd)
-        super(ThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 7)
+        mpname = pname+"-"+str(pq)+"-"+str(pUpbd)
+        super(ThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 2)
         self.upbd = pUpbd
         self.DeadFlags = np.zeros(pm, dtype=int) + 1 # 1 for alive, 0 for dead
         self.Min = 0
@@ -100,10 +131,10 @@ class ThrsSketch(Sketch):
                 self.states[c] = Infty
             else:
                 self.states[c] = k
-            self.Mtg += self.m / self.a
-            self.a = np.dot(np.power(self.q, -self.states), self.DeadFlags)
+            self.updateMtg()
+            self.updateA(np.dot(np.power(self.q, -self.states), self.DeadFlags))
             self.Min = np.min(self.states)
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.Min, self.DeadNum])
+            self.updateSnapshot(t, c, k, [self.Min, self.DeadNum])
             return True, [c]
         else:
             return False, []
@@ -120,7 +151,7 @@ class CdbkSketch(Sketch):
         _m = int(pm/3)
         m = _m * 3
         mpname = pname+"-"+str(pCodebookSize)
-        super(CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 7, 3*MaxChange)
+        super(CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.Codebook = getCodebook(pCodebookSize)
         self.DeadFlags = np.zeros(pm, dtype=int) + 1
         self._m = _m
@@ -138,8 +169,8 @@ class CdbkSketch(Sketch):
                 self.DeadFlags[3*_c:3*_c+3] = 0
                 self.DeadNum += 3
                 self.states[3*_c : 3*_c+3] = Infty
-            self.Mtg += self.m / self.a
-            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)), 0)
+            self.updateMtg()
+            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)+self.mtgScalinglvl*math.log(scalingfactor, self.q)), 0)
             if NewLogMtg != self.LogMtg:
                 for _c2 in range(self._m):
                     newtriple = tuple(self.states[3*_c2 : 3*_c2+3] - NewLogMtg)
@@ -147,8 +178,8 @@ class CdbkSketch(Sketch):
                         self.states[3*_c2 : 3*_c2+3] += NewLogMtg - self.LogMtg
                         cList += [3*_c2, 3*_c2+1, 3*_c2+2]
                 self.LogMtg = NewLogMtg
-            self.a = np.dot(np.power(self.q, -self.states), self.DeadFlags)
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.LogMtg, self.DeadNum])
+            self.updateA(np.dot(np.power(self.q, -self.states), self.DeadFlags))
+            self.updateSnapshot(t, c, k, [self.LogMtg, self.DeadNum])
             return True, cList
         else:
             return False, []
@@ -164,7 +195,7 @@ class AdaThrsSketch(Sketch):
     # when the sum of sketches over the minimum value exceeds a half, raise the min value
     def __init__(self, pm, pq, pN, pUpbd, pcolor='yellow', pname="AdaThrs", pAdaFrac=0.5):
         mpname = pname + "-" + str(pUpbd) + "-" + str(pAdaFrac)
-        super(AdaThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 8, 3*MaxChange)
+        super(AdaThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 3, MaxChange)
         self.upbd = pUpbd
         self.DeadFlags = np.zeros(pm, dtype=int) + 1 # 1 for alive, 0 for dead
         self.Min = 0
@@ -183,7 +214,7 @@ class AdaThrsSketch(Sketch):
                 self.states[c] = Infty
             else:
                 self.states[c] = k
-            self.Mtg += self.m / self.a
+            self.updateMtg()
             self.Min = np.min(self.states)
             LiveNum = self.m - self.DeadNum
             self.Sum = np.dot(self.states, self.DeadFlags) - self.Min * LiveNum
@@ -195,8 +226,8 @@ class AdaThrsSketch(Sketch):
                         self.states[c2] = NewMin
                         cList += [c2]
                 self.Min = NewMin
-            self.a = np.dot(np.power(self.q, -self.states), self.DeadFlags)
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.Min, self.DeadNum, self.Sum])
+            self.updateA(np.dot(np.power(self.q, -self.states), self.DeadFlags))
+            self.updateSnapshot(t, c, k, [self.Min, self.DeadNum, self.Sum])
             return True, cList
         else:
             return False, []
@@ -215,7 +246,7 @@ class Min2CdbkSketch(Sketch):
         _m = int(pm/3)
         m = _m * 3
         mpname = pname+"-"+str(pCodebookSize)
-        super(Min2CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 7, 3*MaxChange)
+        super(Min2CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.Codebook = getCodebook(pCodebookSize)
         self.DeadFlags = np.zeros(pm, dtype=int) + 1
         self._m = _m
@@ -233,8 +264,8 @@ class Min2CdbkSketch(Sketch):
                 self.DeadFlags[3*_c:3*_c+3] = 0
                 self.DeadNum += 3
                 self.states[3*_c : 3*_c+3] = Infty
-            self.Mtg += self.m / self.a
-            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)), 2)
+            self.updateMtg()
+            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)+self.mtgScalinglvl*math.log(scalingfactor, self.q)), 2)
             if NewLogMtg != self.LogMtg:
                 for _c2 in range(self._m):
                     newtriple = tuple(self.states[3*_c2 : 3*_c2+3] - NewLogMtg)
@@ -242,8 +273,8 @@ class Min2CdbkSketch(Sketch):
                         self.states[3*_c2 : 3*_c2+3] += NewLogMtg - self.LogMtg
                         cList += [3*_c2, 3*_c2+1, 3*_c2+2]
                 self.LogMtg = NewLogMtg
-            self.a = np.dot(np.power(self.q, -self.states), self.DeadFlags)
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.LogMtg, self.DeadNum])
+            self.updateA(np.dot(np.power(self.q, -self.states), self.DeadFlags))
+            self.updateSnapshot(t, c, k, [self.LogMtg, self.DeadNum])
             return True, cList
         else:
             return False, []
@@ -260,7 +291,7 @@ class ArtifCdbkSketch(Sketch):
         _m = int(pm/3)
         m = _m * 3
         mpname = pname+"-"+pArtifCodebookName
-        super(ArtifCdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 7, 6*MaxChange)
+        super(ArtifCdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.ArtifCodebook = getattr(ac, pArtifCodebookName)
         self._m = _m
         self.DeadNum = 0
@@ -276,8 +307,8 @@ class ArtifCdbkSketch(Sketch):
             newtriple, _ = self.ArtifCodebook(triple)
             self.states[3*_c : 3*_c+3] = newtriple
             self.states[3*_c : 3*_c+3] += self.LogMtg
-            self.Mtg += self.m / self.a
-            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)), 2)
+            self.updateMtg()
+            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)+self.mtgScalinglvl*math.log(scalingfactor, self.q)), 2)
             if NewLogMtg != self.LogMtg:
                 for _c2 in range(self._m):
                     triple2 = tuple(self.states[3*_c2 : 3*_c2+3] - NewLogMtg)
@@ -287,9 +318,9 @@ class ArtifCdbkSketch(Sketch):
                     if changed:
                         cList += [3*_c2, 3*_c2+1, 3*_c2+2]
                 self.LogMtg = NewLogMtg
-            self.a = np.sum(np.power(self.q, -self.states))
+            self.updateA(np.sum(np.power(self.q, -self.states)))
             self.DeadNum = np.sum(np.where(self.states == Infty + self.LogMtg, 1, 0))
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.LogMtg, self.DeadNum])
+            self.updateSnapshot(t, c, k, [self.LogMtg, self.DeadNum])
             return True, cList
         else:
             return False, []
@@ -305,7 +336,7 @@ class ArtifCdbkNSketch(Sketch):
         _m = int(pm/3)
         m = _m * 3
         mpname = pname+"-"+pArtifCodebookName
-        super(ArtifCdbkNSketch, self).__init__(m, pq, pN, pcolor, mpname, 7, 6*MaxChange)
+        super(ArtifCdbkNSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.ArtifCodebook = getattr(ac, pArtifCodebookName)
         self._m = _m
         self.DeadNum = 0
@@ -324,8 +355,8 @@ class ArtifCdbkNSketch(Sketch):
                 newtriple, _ = self.ArtifCodebook(triple)
                 self.states[3*_c : 3*_c+3] = newtriple
                 self.states[3*_c : 3*_c+3] += self.LogMtg
-            self.Mtg += self.m / self.a
-            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)), 2)
+            self.updateMtg()
+            NewLogMtg = max(int(math.log(self.Mtg / self.m, self.q)+math.log(scalingfactor, self.q)*self.mtgScalinglvl), 2)
             if NewLogMtg != self.LogMtg:
                 for _c2 in range(self._m):
                     triple2 = tuple(self.states[3*_c2 : 3*_c2+3] - NewLogMtg)
@@ -336,9 +367,9 @@ class ArtifCdbkNSketch(Sketch):
                         if changed:
                             cList += [3*_c2, 3*_c2+1, 3*_c2+2]
                 self.LogMtg = NewLogMtg
-            self.a = np.sum(np.power(self.q, -self.states))
+            self.updateA(np.sum(np.power(self.q, -self.states)))
             self.DeadNum = np.sum(np.where(self.states == Infty + self.LogMtg, 1, 0))
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a, self.LogMtg, self.DeadNum])
+            self.updateSnapshot(t, c, k, [self.LogMtg, self.DeadNum])
             return True, cList
         else:
             return False, []
@@ -359,18 +390,18 @@ class CurtainSketch(Sketch):
     def update(self, c, k, t):
         if k > self.states[c]:
             cList = [c]
-            self.Mtg += self.m / self.a
+            self.updateMtg()
             # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 4
             self.states[c] = k
-            for i in [1, 2, 3, 4, 5]:
+            for i in range(1, 11):
                 if c - i >= 0 and self.states[c-i] < k-i*self.diffbd:
                     self.states[c-i] = k-i*self.diffbd
                     cList.append(c-i)
                 if c + i < self.m and self.states[c+i] < k-i*self.diffbd:
                     self.states[c+i] = k-i*self.diffbd
                     cList.append(c+i)
-            self.a = np.sum(np.power(self.q, -self.states))
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a])
+            self.updateA(np.sum(np.power(self.q, -self.states)))
+            self.updateSnapshot(t, c, k, [])
             return True, cList
         else:
             return False, []
@@ -378,15 +409,79 @@ class CurtainSketch(Sketch):
     # you do not need to redefine refresh function for Curtain sketch!
 
 
-class CurtainEvenOffsetSketch(Sketch):
+class CurtainSawTeethSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
-    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnEvnOfs"):
+    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSawTeeth"):
         mpname = pname+"-"+str(pDiffbd)
-        super(CurtainEvenOffsetSketch, self).__init__(pm, pq, pN, pcolor, mpname)
+        super(CurtainSawTeethSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd # ad hoc: this value would be 3.5
         self.ofp = 1/math.sqrt(self.q)
         ceofx = np.arange(pm)
         self.offset = np.where(ceofx%2==0, 0.5, 0)
+        self.a = np.sum(np.power(self.q, -self.states - self.offset))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
+            self.states[c] = k
+            for i in range(1, 11):
+                if c - i >= 0 and self.states[c-i] + self.offset[c-i] < k + self.offset[c] - i * self.diffbd:
+                    self.states[c-i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
+                    self.states[c+i] = k-i*self.diffbd
+                    cList.append(c+i)
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
+            self.updateSnapshot(t, c, k, [])
+            return True, cList
+        else:
+            return False, []
+
+
+class CurtainSTUnifOffstSketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSTUnifOffs"):
+        mpname = pname+"-"+str(pDiffbd)
+        super(CurtainSTUnifOffstSketch, self).__init__(pm, pq, pN, pcolor, mpname)
+        self.diffbd = pDiffbd # ad hoc: this value would be 4
+        ceofx = np.arange(pm)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float)/(2*pm)
+        self.a = np.sum(np.power(self.q, -self.states - self.offset))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
+            self.states[c] = k
+            for i in range(1, 11):
+                if c - i >= 0 and (self.states[c]+self.offset[c]-self.states[c-i]-self.offset[c-i] > self.diffbd*i+0.1):
+                    self.states[c-i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
+                    self.states[c+i] = k-i*self.diffbd
+                    cList.append(c+i)
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
+            self.updateSnapshot(t, c, k, [])
+            return True, cList
+        else:
+            return False, []
+
+
+class CurtainPCSASketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    # this sketch has not finished.
+    def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="CtnPCSA"):
+        mpname = pname+"-"+str(pDiffbd)
+        super(CurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname)
+        self.bitmap = np.zeros((pm, bitmapRange))
+        self.diffbd = pDiffbd # ad hoc: this value would be 3.5
+        self.ofp = 1/math.sqrt(self.q)
+        ceofx = np.arange(pm)
+        self.offset = np.where(ceofx%2==0, 0.5, 0)
+        self.a = np.sum(np.power(self.q, -self.states - self.offset))
 
     def update(self, c, k, t):
         if c % 2 == 0:
@@ -396,7 +491,7 @@ class CurtainEvenOffsetSketch(Sketch):
 
         if k > self.states[c]:
             cList = [c]
-            self.Mtg += self.m / self.a
+            self.updateMtg()
             # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
             self.states[c] = k
             for i in [1, 2, 3, 4, 5]:
@@ -406,8 +501,61 @@ class CurtainEvenOffsetSketch(Sketch):
                 if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
                     self.states[c+i] = k-i*self.diffbd
                     cList.append(c+i)
-            self.a = np.sum(np.power(self.q, -self.states-self.offset))
-            self.snapshot = np.array([t, c, k, self.Mtg, self.a])
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
+            self.updateSnapshot(t, c, k, [])
             return True, cList
         else:
             return False, []
+
+
+class CurtainStarSketch(Sketch):
+    def __init__(self, pm, pq, pN, pUpbd, pcolor='green', pname="CtnStar"):
+        mpname = pname+"-"+str(pq)+"-"+str(pUpbd)
+        super(CurtainStarSketch, self).__init__(pm, pq, pN, pcolor, mpname, 1)
+        self.upbd = pUpbd
+        self.Min = 0
+        self.snapshotColStr += ["Min"]
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            self.states[c] = k
+            cList = [c]
+            if k - self.Min > self.upbd:
+                self.Min = k - self.upbd
+            for i in range(self.m):
+                if self.states[c] < self.Min:
+                    self.states[c] = self.Min
+                    cList.append(i)
+            self.updateMtg()
+            self.updateA(np.sum(np.power(self.q, -self.states)))
+            self.updateSnapshot(t, c, k, [self.Min])
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(CurtainStarSketch, self).refresh()
+        self.Min = 0
+
+
+def updategen(usketch:Sketch):
+    remainingArea = np.float64(usketch.a / usketch.m)
+    if remainingArea < 1e-8:
+        deltat = np.float64(np.random.exponential(1/remainingArea))
+    else:
+        deltat = np.float64(np.random.geometric(remainingArea))
+    if hasattr(usketch, "offset"):
+        prob = np.power(1/usketch.q, usketch.states + usketch.offset)
+    else:
+        prob = np.power(1/usketch.q, usketch.states)
+    condprob = prob / np.sum(prob)
+    c = np.random.choice(np.arange(usketch.m), p=condprob)
+    # prob of at least k
+    # = sum_k^infty (1-(1-1/q))^(i-1)(1-1/q)
+    # = (1/q)^{k-1}-(1/q)^{k} + ...
+    # = (1/q)^(k-1) :
+    # now you are at k, so the prob of at least k+1 is 1/q^k
+    k = usketch.states[c] + np.random.geometric(1-1/usketch.q)
+    newt = np.float64(usketch.t+deltat)
+    return newt, c, k
+

@@ -1,17 +1,39 @@
 import pandas as pd
 import numpy as np
 import utils as utl
+#import newsimu as ns
+import tqdm
 
 
+names = ["LL", "Thrs-1.414-14", "Thrs-2.0-14", "Thrs-4.0-14", "Thrs-8.0-14",
+            "Thrs-16.0-14", "Thrs-32.0-14"]
+colors = ["red", "green", "blue", "yellow", "m", "c", "orange"]
 
-MtgRdf = pd.read_csv("results/Mtg_06_17_02_50_18.csv")
-names = ["LL", "AdaThrs-7-0.2", "ArtifCdbkN-ac511N", "Crtn-4", "CtnEvnOfs-3.5"]
+ncdfs = []
 
-VarsDf = pd.DataFrame([[0, 0, 0, 0, 0]], columns=names, dtype=float)
+datname = "invRegA"
+Round = 1000
 
-for name in names:
-    mtgs = np.array(MtgRdf[name])
-    vars = np.sum(np.square(mtgs/100000-1))/1000
-    VarsDf[name][0] = vars
+samplN = 1000
+expsamplx = np.array(np.arange(samplN), dtype=np.float64)/samplN * 20
+samplx = np.power(10, expsamplx)
 
-VarsDf.to_csv("results/Congregated_"+utl.getTimeString()+".csv")
+
+AllDf = pd.DataFrame(np.array(np.zeros((samplN, len(names))), dtype=np.float64),
+                     columns=names)
+
+for i in range(len(names)):
+    name = names[i]
+    color = colors[i]
+    overalldf = np.zeros(samplN, dtype=np.float64)
+    for r in tqdm.tqdm(range(Round)):
+        newdf = pd.read_csv("TTLHist/T8_V1/shortHist_" + name + "(" + str(r) + ").csv")
+        newdfPacked = utl.myLogunpack(newdf, datname, samplx)
+        overalldf += newdfPacked/Round
+    ncdfs.append(tuple((name, color, overalldf.copy())))
+    AllDf[name] = overalldf
+    print(i)
+
+utl.myLogplot(ncdfs, datname, samplx, "using 4bits")
+
+AllDf.to_csv("results/Congregated_"+datname+"_4bit_"+utl.getTimeString()+".csv")

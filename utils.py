@@ -3,12 +3,10 @@ import time
 import pickle
 import matplotlib.pyplot as plt
 
-VersionStr = "T6"
-Infty = 32
-# to us, values above 32 is a state not possible to appear in LL simulation. in simulation not even 16
-MaxChange = 16
-# I believe there should not be more than 16 changes happening on one counter. in simulation not even 13.
-# except for some special sketches
+VersionStr = "T8"
+RunStr = "V2"
+Infty = 1000
+MaxChange = 1000
 
 
 def getTimeString():
@@ -22,27 +20,60 @@ def getCodebook(pSize):
     return gCodebook
 
 
-def unpack(pN, df, datname, inxmax):
-    dat = np.zeros(pN)
+def unpack(pN, df, datname, inxmax, samplerate):
+    dat = np.zeros(int(pN/samplerate))
     for inx in range(inxmax):
         d = df[datname][inx]
         mint = int(df["t"][inx])
         maxt = int(df["t"][inx+1]) if (inx < inxmax-1) else pN
         for pt in range(mint, maxt):
-            dat[pt] = d
+            if pt % samplerate == 0:
+                dat[int(pt/samplerate)] = d
+    if datname == "a":
+        dat = dat/300
     return dat
 
 
-def myplot(mSketches, datname, pN, pr, mtitle="", reference=True):
-    x = np.arange(pN)
+def myplot(mSketches, datname, pN, pr, mtitle="", reference=True, msamplerate=1):
+    x = np.arange(int(pN/msamplerate)) * msamplerate
     if reference:
         plt.plot(x, x, color="black")
     for sketch in mSketches:
-        datHist = unpack(pN, sketch.snapshotHistdf, datname, sketch.snapshotHist_inx)
+        datHist = unpack(pN, sketch.snapshotHistdf, datname, sketch.snapshotHist_inx, msamplerate)
         plt.plot(x, datHist, color=sketch.color, label=sketch.name)
     plt.legend(loc="upper left")
     plt.title(mtitle)
     plt.savefig("figs/"+VersionStr+"_"+datname+"_"+getTimeString()+"_("+str(pr) + ").png")
+    plt.show()
+
+
+def myLogunpack(df, datname, sampl):
+    # df has two columns, t and Mtg
+    # inxes give a list of possible t values.
+    # if for inxes[m], it is between df[i] and df[i+1], then its value is df[i]
+    # then we provide a packed dat
+    samLen = len(sampl)
+    dfLen = len(df["t"])
+    inx_df = np.int64(0)
+    inx_sam = np.int64(0)
+    dat = np.zeros(samLen, dtype=np.float64)
+    while inx_df < dfLen:
+        minT = np.float64(df["t"][inx_df])
+        maxT = np.float64(df["t"][inx_df + 1] if inx_df < dfLen - 1 else 1e100)
+        while inx_sam < samLen and minT <= sampl[inx_sam] < maxT:
+            dat[inx_sam] = df[datname][inx_df]
+            inx_sam += 1
+        inx_df += 1
+    return dat
+
+
+def myLogplot(ncVecs, datname, samplx, mtitle):
+    for ncVec in ncVecs:
+        name, color, vec = ncVec
+        plt.plot(samplx, vec, color=color, label=name)
+    plt.legend(loc="upper left")
+    plt.title(mtitle)
+    plt.savefig("figs/"+VersionStr+"_"+datname+"_"+getTimeString()+".png")
     plt.show()
 
 
@@ -62,5 +93,7 @@ def getRandSeriesString(gq, gm, gN, gr):
 
 
 def getPlotTitle(gm, gq, gN, gr, gR):
-    return "m=%d, q=%d, N=%d, %d/%d round" % (gm, gq, gN, gr+1, gR)
-
+    if gq is None:
+        return "m=%d, N=%d, %d/%d round" % (gm, gN, gr+1, gR)
+    else:
+        return "m=%d, q=%d, N=%d, %d/%d round" % (gm, gq, gN, gr+1, gR)
