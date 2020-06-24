@@ -70,15 +70,15 @@ class Sketch:
         self.runningHistdf = pd.DataFrame(self.runningHist, columns=self.runningColStr)
         self.snapshotHistdf = pd.DataFrame(self.snapshotHist[0:self.snapshotHist_inx, :], columns=self.snapshotColStr)
         if mode == "excel":
-            sWriter = pd.ExcelWriter("TTLHist/"+VersionStr+"_"+self.name+"_"+getTimeString()+".xlsx")
+            sWriter = pd.ExcelWriter("TTLHist/"+VersionStr+"/"+self.name+"_"+getTimeString()+".xlsx")
             self.runningHistdf.to_excel(sWriter, "running")
             self.snapshotHistdf.to_excel(sWriter, "snapshot")
             sWriter.save()
         elif mode == "csv":
-            self.runningHistdf.to_csv("TTLHist/"+VersionStr+"_"+self.name+"_running_"+getTimeString()+".csv")
-            self.snapshotHistdf.to_csv("TTLHist/"+VersionStr+"_"+self.name+"_snapshots_"+getTimeString()+".csv")
+            self.runningHistdf.to_csv("TTLHist/"+VersionStr+"/"+self.name+"_running_"+getTimeString()+".csv")
+            self.snapshotHistdf.to_csv("TTLHist/"+VersionStr+"/"+self.name+"_snapshots_"+getTimeString()+".csv")
         elif mode == "short":
-            self.snapshotHistdf[["t", "Mtg", "invRegA"]].to_csv("TTLHist/"+VersionStr+"_"+RunStr+"/"
+            self.snapshotHistdf[["t", "Mtg", "invRegA"]].to_csv("TTLHist/"+VersionStr+"/"+RunStr+"_"
                                                                 +"shortHist_"+self.name+"("+str(sr)+").csv")
         elif mode == "extracted":
             pass
@@ -124,7 +124,7 @@ class ThrsSketch(Sketch):
 
     def update(self, c, k, t):
         if k > self.states[c] and self.DeadFlags[c] == 1:
-            if k - self.Min > self.upbd:
+            if k - self.Min > self.upbd and self.DeadNum < self.m - 1:
                 # this counter dead
                 self.DeadNum += 1
                 self.DeadFlags[c] = 0
@@ -523,8 +523,8 @@ class CurtainStarSketch(Sketch):
             if k - self.Min > self.upbd:
                 self.Min = k - self.upbd
             for i in range(self.m):
-                if self.states[c] < self.Min:
-                    self.states[c] = self.Min
+                if self.states[i] < self.Min:
+                    self.states[i] = self.Min
                     cList.append(i)
             self.updateMtg()
             self.updateA(np.sum(np.power(self.q, -self.states)))

@@ -1,3 +1,5 @@
+# the function of this file is abandomed
+
 # this program trys to get a codebook
 # that is, find the most frequent triplets
 

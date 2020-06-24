@@ -12,26 +12,42 @@ BitperCounter = 3
 m = int(MaxBit/BitperCounter)
 N = 10000
 SuperInfty = 1e20
-SuperEpsilon = 1e-20
 Round = 1000
-Upbd = 6
-Size = 511
-AcName = "ac393"
-AcNName = "ac511N"
-AdaFrac = 0.2
+Upbd = (2**BitperCounter) - 2
+# Size = 511
+# AcName = "ac393"
+# AcNName = "ac511N"
+# AdaFrac = 0.2
 
-PlotPeriod = 1
 ToSave = True
+SaveHistIni = 1
+
+samplN = 1000
+expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 20
+samplx = np.power(10, expsamplx)
 
 Sketches = [
     sk.LLSketch(m, 2.0, N),
-    sk.ThrsSketch(m, 1.414, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 1.4, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 1.6, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 1.8, N, pUpbd=Upbd),
     sk.ThrsSketch(m, 2.0, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 2.2, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 2.4, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 2.6, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 2.8, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 3.0, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 3.2, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 3.4, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 3.6, N, pUpbd=Upbd),
+    sk.ThrsSketch(m, 3.8, N, pUpbd=Upbd),
     sk.ThrsSketch(m, 4.0, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 8.0, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 16.0, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 32.0, N, pUpbd=Upbd),
-    #sk.Min2CdbkSketch(m, q, N, Size),
+    # sk.CurtainStarSketch(m, 2.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 4.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 8.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 16.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 32.0, N, pUpbd=Upbd),
+    # #sk.Min2CdbkSketch(m, q, N, Size),
     #sk.ArtifCdbkSketch(m, q, N, AcName),
     #sk.ArtifCdbkNSketch(m, q, N, AcNName, pcolor="purple"),
     # sk.CurtainSTUnifOffstSketch(m, 4.0, N, 1.5, pcolor="c", pname="CtnSTUO-q-4"),
@@ -45,59 +61,38 @@ Sketches = [
     # sk.CurtainSawTeethSketch(m, 6.0, N, 3.5, pcolor="m", pname="CtnST-q-3"),
 ]
 
-names = [sketch.name for sketch in Sketches]
-DeathSketches = [sketch for sketch in Sketches if hasattr(sketch, "DeadNum")]
+# names = [sketch.name for sketch in Sketches]
+# DeathSketches = [sketch for sketch in Sketches if hasattr(sketch, "DeadNum")]
+# invRegAlldf = pd.DataFrame(np.array(np.zeros((samplN, len(names))), dtype=np.float64), columns=names)
 
-SketchesReachedSupInf = []
+for sketch in Sketches:
+    SaveHist = SaveHistIni
+    MtgAlldf = pd.DataFrame(np.array(np.zeros((samplN + 1, Round)), dtype=np.float64), columns=list(range(Round)))
+    print("Currently running Sketch"+sketch.name)
+    for r in tqdm.tqdm(range(Round)):
+        SketchReachedSupInf = False
+        for s in range(N):
+            t, c, k = sk.updategen(sketch)
+            Rec, CList = sketch.update(c, k, t)
+            if Rec:
+                sketch.record(CList)
+            if sketch.t >= SuperInfty:
+                break
 
-samplN = 1000
-expsamplx = np.array(np.arange(samplN), dtype=np.float64)/samplN * 20
-samplx = np.power(10, expsamplx)
+        if ToSave:
+            sketch.savehist(mode="extracted")
+            MtgAlldf[r] = utl.myLogunpack(sketch.snapshotHistdf, "Mtg", samplx)
+            #invRegAlldf[sketch.name] += utl.myLogunpack(sketch.snapshotHistdf, "t", samplx)/Round
 
-MtgAlldf = pd.DataFrame(np.array(np.zeros((samplN, len(names))), dtype=np.float64),
-                     columns=names)
-
-invRegAlldf = pd.DataFrame(np.array(np.zeros((samplN, len(names))), dtype=np.float64),
-                     columns=names)
-
-for r in tqdm.tqdm(range(Round)):
-    ToPlot = (r % PlotPeriod == 0)
-    for s in range(N):
-        for sketch in Sketches:
-            if sketch not in SketchesReachedSupInf:
-                t, c, k = sk.updategen(sketch)
-                if ToSave:
-                    Rec, CList = sketch.update(c, k, t)
-                    if Rec:
-                        sketch.record(CList)
-                else:
-                    sketch.update(c, k, t)
-                if sketch.t >= SuperInfty:
-                    SketchesReachedSupInf.append(sketch)
-                if hasattr(sketch, "DeadNum") and sketch.DeadNum == sketch.m:
-                    # all counters died out
-                    SketchesReachedSupInf.append(sketch)
-        if len(SketchesReachedSupInf) == len(Sketches):
-            # all sketches has reached 1e20
-            break
+        if ToSave and SaveHist > 0:
+            SaveHist -= 1
+            sketch.savehist(mode="csv")
+            #utl.myplot(Sketches, "Mtg", N, r, utl.getPlotTitle(m, None, N, r, Round), msamplerate=100)
+            #utl.myplot(Sketches, "a", N, r, utl.getPlotTitle(m, None, N, r, Round), False, msamplerate=100)
+            #utl.myplot(DeathSketches, "DeadNum", N, r, utl.getPlotTitle(m, None, N, r, Round), False, msamplerate=100)
+        sketch.refresh()
 
     if ToSave:
-        for sketch in Sketches:
-            sketch.savehist(mode="extracted", sr=r)
-            MtgAlldf[sketch.name] += utl.myLogunpack(sketch.snapshotHistdf, "Mtg", samplx)/Round
-            invRegAlldf[sketch.name] += utl.myLogunpack(sketch.snapshotHistdf, "t", samplx)/Round
-
-    if ToSave and ToPlot:
-        pass
-        # for sketch in Sketches:
-        #      sketch.savehist(mode="csv")
-        # #utl.myplot(Sketches, "Mtg", N, r, utl.getPlotTitle(m, None, N, r, Round), msamplerate=100)
-        #utl.myplot(Sketches, "a", N, r, utl.getPlotTitle(m, None, N, r, Round), False, msamplerate=100)
-        #utl.myplot(DeathSketches, "DeadNum", N, r, utl.getPlotTitle(m, None, N, r, Round), False, msamplerate=100)
-
-    for sketch in Sketches:
-        sketch.refresh()
-    SketchesReachedSupInf = []
-
-MtgAlldf.to_csv("results/Congregated_Mtg_3bit_"+utl.getTimeString()+".csv")
-invRegAlldf.to_csv("results/Congregated_invRegA_3bit_"+utl.getTimeString()+".csv")
+        MtgAlldf.to_csv("results/"+utl.VersionStr+"/Congregated_Mtg_"+"_"
+                        +str(BitperCounter)+"bits_"+sketch.name+utl.getTimeString()+".csv")
+        #invRegAlldf.to_csv("results/Congregated_invRegA_3bit_"+utl.getTimeString()+".csv")

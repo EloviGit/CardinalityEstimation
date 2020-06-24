@@ -3,7 +3,7 @@ import time
 import pickle
 import matplotlib.pyplot as plt
 
-VersionStr = "T8"
+VersionStr = "T9"
 RunStr = "V2"
 Infty = 1000
 MaxChange = 1000

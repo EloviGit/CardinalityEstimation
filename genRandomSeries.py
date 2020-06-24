@@ -1,3 +1,5 @@
+# the function of this file is abandomed.
+
 # we do not need to call numpy.random every time
 # we can do them at the first time before the program starts.
 # would this bring speed up?
