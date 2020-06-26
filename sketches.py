@@ -1,8 +1,7 @@
-import numpy as np
 import math
 import pandas as pd
 from utils import *
-import artifCodebooks as ac
+from _trash import artifCodebooks as ac
 
 scalingfactor = 1000
 scalingfactors = [1, 1000, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27, 1e30]
@@ -412,10 +411,9 @@ class CurtainSketch(Sketch):
 class CurtainSawTeethSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSawTeeth"):
-        mpname = pname+"-"+str(pDiffbd)
+        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
         super(CurtainSawTeethSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd # ad hoc: this value would be 3.5
-        self.ofp = 1/math.sqrt(self.q)
         ceofx = np.arange(pm)
         self.offset = np.where(ceofx%2==0, 0.5, 0)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
@@ -443,10 +441,11 @@ class CurtainSawTeethSketch(Sketch):
 class CurtainSTUnifOffstSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSTUnifOffs"):
-        mpname = pname+"-"+str(pDiffbd)
+        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
         super(CurtainSTUnifOffstSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd # ad hoc: this value would be 4
         ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
         self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float)/(2*pm)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
 
@@ -457,11 +456,11 @@ class CurtainSTUnifOffstSketch(Sketch):
             # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
             self.states[c] = k
             for i in range(1, 11):
-                if c - i >= 0 and (self.states[c]+self.offset[c]-self.states[c-i]-self.offset[c-i] > self.diffbd*i+0.1):
-                    self.states[c-i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
+                if c - i >= 0 and (self.states[c]+self.sawtoffset[c]-self.states[c-i]-self.sawtoffset[c-i] > self.diffbd*i):
+                    self.states[c-i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                     cList.append(c-i)
-                if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
-                    self.states[c+i] = k-i*self.diffbd
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c+i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                     cList.append(c+i)
             self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
             self.updateSnapshot(t, c, k, [])

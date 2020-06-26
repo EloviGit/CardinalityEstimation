@@ -20,28 +20,45 @@ Upbd = (2**BitperCounter) - 2
 # AdaFrac = 0.2
 
 ToSave = True
-SaveHistIni = 1
+SaveHistIni = 3
 
 samplN = 1000
 expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 20
 samplx = np.power(10, expsamplx)
 
 Sketches = [
-    sk.LLSketch(m, 2.0, N),
-    sk.ThrsSketch(m, 1.4, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 1.6, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 1.8, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 2.0, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 2.2, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 2.4, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 2.6, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 2.8, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 3.0, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 3.2, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 3.4, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 3.6, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 3.8, N, pUpbd=Upbd),
-    sk.ThrsSketch(m, 4.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 1.5, N, pUpbd=Upbd),z
+    # sk.CurtainStarSketch(m, 2.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 2.5, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 3.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 3.5, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 4.0, N, pUpbd=Upbd),
+    sk.CurtainStarSketch(m, 4.5, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 5.0, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 5.5, N, pUpbd=Upbd),
+    # sk.CurtainStarSketch(m, 6.0, N, pUpbd=Upbd),
+    # sk.CurtainSawTeethSketch(m, 1.5, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 2.0, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 3.0, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 4.0, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 5.0, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 6.0, N, pDiffbd=1.5),
+    # sk.CurtainSawTeethSketch(m, 7.0, N, pDiffbd=1.5),
+    # sk.CurtainSTUnifOffstSketch(m, 8.0, N, pDiffbd=1.5),
+    # sk.CurtainSTUnifOffstSketch(m, 10.0, N, pDiffbd=1.5),
+    # sk.CurtainSTUnifOffstSketch(m, 12.0, N, pDiffbd=1.5),
+    # sk.ThrsSketch(m, 1.8, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 2.0, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 2.2, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 2.4, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 2.6, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 2.8, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 3.0, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 3.2, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 3.4, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 3.6, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 3.8, N, pUpbd=Upbd),
+    # sk.ThrsSketch(m, 4.0, N, pUpbd=Upbd),
     # sk.CurtainStarSketch(m, 2.0, N, pUpbd=Upbd),
     # sk.CurtainStarSketch(m, 4.0, N, pUpbd=Upbd),
     # sk.CurtainStarSketch(m, 8.0, N, pUpbd=Upbd),
@@ -93,6 +110,6 @@ for sketch in Sketches:
         sketch.refresh()
 
     if ToSave:
-        MtgAlldf.to_csv("results/"+utl.VersionStr+"/Congregated_Mtg_"+"_"
-                        +str(BitperCounter)+"bits_"+sketch.name+utl.getTimeString()+".csv")
+        MtgAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"revised_Mtg_"
+                        +str(BitperCounter)+"bits_"+sketch.name+".csv")
         #invRegAlldf.to_csv("results/Congregated_invRegA_3bit_"+utl.getTimeString()+".csv")
