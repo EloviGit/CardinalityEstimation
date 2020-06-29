@@ -3,8 +3,8 @@ import time
 import pickle
 import matplotlib.pyplot as plt
 
-VersionStr = "T9"
-RunStr = "V251703"
+VersionStr = "T10"
+RunStr = "V281600"
 Infty = 1000
 MaxChange = 1000
 
@@ -58,9 +58,8 @@ def myLogunpack(df, datname, sampl):
     inx_sam = np.int64(0)
     dat = np.zeros(samLen, dtype=np.float64)
     while inx_df < dfLen:
-        minT = np.float64(df["t"][inx_df])
         maxT = np.float64(df["t"][inx_df + 1] if inx_df < dfLen - 1 else 1e100)
-        while inx_sam < samLen and minT <= sampl[inx_sam] < maxT:
+        while inx_sam < samLen and sampl[inx_sam] < maxT:
             dat[inx_sam] = df[datname][inx_df]
             inx_sam += 1
         inx_df += 1

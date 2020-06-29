@@ -13,26 +13,30 @@ import tqdm
 #          "Thrs-2.4-14", "Thrs-2.6-14", "Thrs-2.8-14", "Thrs-3.0-14", "Thrs-3.2-14",
 #          "Thrs-3.4-14", "Thrs-3.6-14", "Thrs-3.8-14", "Thrs-4.0-14"]
 
-# names = ["CtnSawTeeth-1.5-1.5", "CtnSawTeeth-2.0-1.5", "CtnSawTeeth-3.0-1.5",
+# names = ["CtnSawTeeth-1.5-1.5", "CtnSawTeeth-2.0-1.5", "CtnSawTeeth-2.5-1.5", "CtnSawTeeth-3.0-1.5",
+#          "CtnSawTeeth-3.5-1.5",
 #          "CtnSawTeeth-4.0-1.5", "CtnSawTeeth-5.0-1.5", "CtnSawTeeth-6.0-1.5",
 #          "CtnSawTeeth-7.0-1.5",
 #          "CtnSTUnifOffs-8.0-1.5", "CtnSTUnifOffs-10.0-1.5", "CtnSTUnifOffs-12.0-1.5"]
 
-names = ["CtnStar-1.5-6", "CtnStar-2.0-6", "CtnStar-2.5-6", "CtnStar-3.0-6",
-         "CtnStar-3.5-6", "CtnStar-4.0-6", "CtnStar-4.5-6", "CtnStar-5.0-6",
-         "CtnStar-5.5-6", "CtnStar-6.0-6", "CtnStar-7.0-6", "CtnStar-8.0-6",
-         "CtnStar-9.0-6", "CtnStar-10.0-6", "CtnStar-12.0-6",
-]
+# names = ["CtnStar-1.5-6", "CtnStar-2.0-6", "CtnStar-2.5-6", "CtnStar-3.0-6",
+#          "CtnStar-3.5-6", "CtnStar-4.0-6", "CtnStar-4.5-6", "CtnStar-5.0-6",
+#          "CtnStar-5.5-6", "CtnStar-6.0-6", "CtnStar-7.0-6", "CtnStar-8.0-6",
+#          "CtnStar-9.0-6", "CtnStar-10.0-6", "CtnStar-12.0-6",
+# ]
+
+qList = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0]
+names = ["CtnSTUnifOffs-%.1f-1.5" % q for q in qList]
 
 datname = "Mtg"
-Round = 1000
+Round = 5000
 
 samplN = 1000
 expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 20
 samplx = np.power(10, expsamplx)
 
-InsertionInx = 750 # 1e15
-InsertionT = 1e15
+InsertionInx = 1000 # 1e10
+InsertionT = 1e10
 
 AllDf = pd.DataFrame(np.array(np.zeros((Round, len(names))), dtype=np.float64),
                      columns=names)
@@ -55,7 +59,8 @@ AllDf = pd.DataFrame(np.array(np.zeros((Round, len(names))), dtype=np.float64),
 
 #filenames = ["results/T9/V1811_Mtg_4bits_"+name+".csv" for name in names]
 # filenames = ["results/T9/V2243_Mtg_2bits_"+name+".csv" for name in names]
-filenames = ["results/T9/V251703_Mtg_3bits_"+name+".csv" for name in names]
+# filenames = ["results/T9/V2243_Mtg_2bits_"+name+".csv" for name in names]
+filenames = ["results/T10/V271453_Mtg_2bits_"+name+".csv" for name in names]
 
 
 for i in range(len(names)):
@@ -66,5 +71,5 @@ for i in range(len(names)):
     ratio = values/InsertionT
     AllDf[name] = ratio[1:]
 
-AllDf.to_csv("cong/"+utl.VersionStr+"/"+datname+"_CtnStar_3bit_ratio_1e15_"+utl.getTimeString()+".csv")
+AllDf.to_csv("cong/"+utl.VersionStr+"/"+datname+"_CtnSTUnifOffs_2bit_ratio_1e10_"+utl.getTimeString()+".csv")
 
