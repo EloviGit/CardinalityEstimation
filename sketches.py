@@ -5,10 +5,12 @@ from _trash import artifCodebooks as ac
 
 scalingfactor = 1000
 scalingfactors = [1, 1000, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27, 1e30]
+CurtainUpbd = 100
+SnapMaxChange = 100000
+
 
 class Sketch:
-    def __init__(self, pm, pq, pN, pcolor, pname, psnapshotLenNew=0, prunMaxChange=MaxChange,
-                 pSnapshotHistexpand:int=1):
+    def __init__(self, pm, pq, pN, pcolor, pname, psnapshotLenNew=0, prunhistLenNew=0, prunMaxChange=MaxChange):
         self.name = pname
         self.color = pcolor
         self.m = pm
@@ -23,14 +25,17 @@ class Sketch:
         self.t = np.float64(0)
 
         self.runningHist = np.zeros((pm, 2*prunMaxChange), dtype=np.float64)
-        self.runningColStr = ["time"+str(int(i/2)) if i%2==0 else "value"+str(int(i/2)) for i in range(2*prunMaxChange)]
+        self.runningColSingStr = ["time", "value"]
+        self.runningColSingStrLen = 2 + prunhistLenNew
+        self.runningColStr = [colstr + str(i) for i in range(prunMaxChange) for colstr in self.runningColSingStr]
+        self.runningHistNewcontent = np.zeros((self.m, prunhistLenNew), dtype=np.float64)
         self.runningHist_inx = np.zeros(pm, dtype=int)
         self.runningHistdf = pd.DataFrame()
 
         self.snapshotLen = psnapshotLenNew + 7
         self.snapshotColStr = ["t", "c", "k", "Mtg", "a", "regA", "invRegA"]
         self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
-        self.snapshotHist = np.zeros((10000*pSnapshotHistexpand, self.snapshotLen))
+        self.snapshotHist = np.zeros((SnapMaxChange, self.snapshotLen))
         self.snapshotHist_inx: int = 0
         self.snapshotHistdf = pd.DataFrame()
 
@@ -61,15 +66,20 @@ class Sketch:
         if tosaveRunHist:
             for c in cList:
                 self.runningHist[c][self.runningHist_inx[c]:self.runningHist_inx[c]+2] = (self.t, self.states[c])
-                self.runningHist_inx[c] += 2
+                if self.runningColSingStrLen != 2:
+                    self.runningHist[c][self.runningHist_inx[c]+2:self.runningHist_inx[c]+self.runningColSingStrLen] = self.runningHistNewcontent[c]
+                self.runningHist_inx[c] += self.runningColSingStrLen
         self.snapshotHist[self.snapshotHist_inx] = self.snapshot
         self.snapshotHist_inx += 1
 
     def savehist(self, mode="excel", sr=0, tosaveRunHist=True):
         # 0 for both, 1 for only the snapshot, 2 for none of them.
-        max_run_inx = np.max(self.runningHist_inx)+10
+        max_run_inx = int(np.max(self.runningHist_inx)/self.runningColSingStrLen)+1
+        self.runningColStr = [colstr + str(i) for i in range(int(len(self.runningColStr)/self.runningColSingStrLen))
+                              for colstr in self.runningColSingStr]
         if tosaveRunHist:
-            self.runningHistdf = pd.DataFrame(self.runningHist[:, :2*max_run_inx], columns=self.runningColStr[:2*max_run_inx])
+            self.runningHistdf = pd.DataFrame(self.runningHist[:, :self.runningColSingStrLen*max_run_inx],
+                                              columns=self.runningColStr[:self.runningColSingStrLen*max_run_inx])
         self.snapshotHistdf = pd.DataFrame(self.snapshotHist[0:self.snapshotHist_inx, :], columns=self.snapshotColStr)
         if mode == "excel":
             sWriter = pd.ExcelWriter("TTLHist/"+VersionStr+"/"+self.name+"_"+getTimeString()+".xlsx")
@@ -95,8 +105,30 @@ class Sketch:
         self.mtgScalinglvl = 0
         self.runningHist_inx = np.zeros(self.runningHist_inx.shape, dtype=np.int)
         self.runningHist = np.zeros(self.runningHist.shape, dtype=np.float64)
+        self.runningHistNewcontent = np.zeros(self.runningHistNewcontent.shape)
         self.snapshotHist_inx = 0
         self.snapshotHist = np.zeros(self.snapshotHist.shape, dtype=np.float64)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        if hasattr(self, "offset"):
+            prob = np.power(1 / self.q, self.states + self.offset)
+        else:
+            prob = np.power(1 / self.q, self.states)
+        condprob = prob / np.sum(prob)
+        c = np.random.choice(np.arange(self.m), p=condprob)
+        # prob of at least k
+        # = sum_k^infty (1-(1-1/q))^(i-1)(1-1/q)
+        # = (1/q)^{k-1}-(1/q)^{k} + ...
+        # = (1/q)^(k-1) :
+        # now you are at k, so the prob of at least k+1 is 1/q^k
+        k = self.states[c] + np.random.geometric(1 - 1 / self.q)
+        newt = np.float64(self.t + deltat)
+        return newt, c, k
 
 
 class LLSketch(Sketch):
@@ -393,15 +425,16 @@ class CurtainSketch(Sketch):
         if k > self.states[c]:
             cList = [c]
             self.updateMtg()
-            # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 4
             self.states[c] = k
-            for i in range(1, 11):
+            for i in range(1, CurtainUpbd):
                 if c - i >= 0 and self.states[c-i] < k-i*self.diffbd:
                     self.states[c-i] = k-i*self.diffbd
                     cList.append(c-i)
                 if c + i < self.m and self.states[c+i] < k-i*self.diffbd:
                     self.states[c+i] = k-i*self.diffbd
                     cList.append(c+i)
+                if k-i*self.diffbd < 0:
+                    break
             self.updateA(np.sum(np.power(self.q, -self.states)))
             self.updateSnapshot(t, c, k, [])
             return True, cList
@@ -416,7 +449,7 @@ class CurtainSawTeethSketch(Sketch):
     def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSawTeeth"):
         mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
         super(CurtainSawTeethSketch, self).__init__(pm, pq, pN, pcolor, mpname)
-        self.diffbd = pDiffbd # ad hoc: this value would be 3.5
+        self.diffbd = pDiffbd
         ceofx = np.arange(pm)
         self.offset = np.where(ceofx%2==0, 0.5, 0)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
@@ -425,15 +458,16 @@ class CurtainSawTeethSketch(Sketch):
         if k > self.states[c]:
             cList = [c]
             self.updateMtg()
-            # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
             self.states[c] = k
-            for i in range(1, 11):
+            for i in range(1, CurtainUpbd):
                 if c - i >= 0 and self.states[c-i] + self.offset[c-i] < k + self.offset[c] - i * self.diffbd:
                     self.states[c-i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
                     cList.append(c-i)
                 if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
                     self.states[c+i] = k-i*self.diffbd
                     cList.append(c+i)
+                if k-i*self.diffbd < 0:
+                    break
             self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
             self.updateSnapshot(t, c, k, [])
             return True, cList
@@ -446,25 +480,26 @@ class CurtainSTUnifOffstSketch(Sketch):
     def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSTUnifOffs"):
         mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
         super(CurtainSTUnifOffstSketch, self).__init__(pm, pq, pN, pcolor, mpname)
-        self.diffbd = pDiffbd # ad hoc: this value would be 4
+        self.diffbd = pDiffbd
         ceofx = np.arange(pm)
         self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
-        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float)/(2*pm)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
 
     def update(self, c, k, t):
         if k > self.states[c]:
             cList = [c]
             self.updateMtg()
-            # this part is very ad hoc: I exploited the fact that in our simulation self.diffbd would be 3.5
             self.states[c] = k
-            for i in range(1, 11):
+            for i in range(1, CurtainUpbd):
                 if c - i >= 0 and (self.states[c]+self.sawtoffset[c]-self.states[c-i]-self.sawtoffset[c-i] > self.diffbd*i):
                     self.states[c-i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                     cList.append(c-i)
                 if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < k + self.sawtoffset[c] - i * self.diffbd:
                     self.states[c+i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                     cList.append(c+i)
+                if k-i*self.diffbd < 0:
+                    break
             self.updateA(np.sum(np.power(self.q, -self.states-self.offset)))
             self.updateSnapshot(t, c, k, [])
             return True, cList
@@ -476,16 +511,17 @@ class CurtainPCSASketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     # this sketch has not finished.
     def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="CtnPCSA"):
-        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd)
-        super(CurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname)
+        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        super(CurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname ,prunhistLenNew=bitmapRange)
         self.bitmap = np.ones((pm, bitmapRange)) # the first bit would always be 1, so not stored in this bitmap
         # in the beginning all states[c] = 1 so we should let the bitmap all be 1
         self.bitmapRange = bitmapRange
-        self.diffbd = pDiffbd # ad hoc: this value would be 3.5
+        self.diffbd = pDiffbd
         ceofx = np.arange(pm)
         self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
         self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
+        self.runningColSingStr += ["blw"+str(i)+"-bit" for i in range(bitmapRange)]
 
     def update(self, c, k, t):
         if k > self.states[c] or self.states[c]-self.bitmapRange <= k < self.states[c]:
@@ -494,10 +530,9 @@ class CurtainPCSASketch(Sketch):
                 if self.bitmap[c, oldstate - k - 1] == 0:
                     self.updateMtg()
                     self.bitmap[c, oldstate - k - 1] = 1
-                    probBitmap = np.vstack(tuple((1 + np.arange(self.bitmapRange)- self.states[i] - self.offset[i]) for i in range(self.m)))
-                    remainingAreaBitmap = np.sum(np.multiply(1-self.bitmap, np.power(self.q, probBitmap)))*(1-1/self.q)
-                    self.updateA(remainingAreaBitmap + np.sum(np.power(self.q, -self.states-self.offset)))
+                    self.updateA(self.a - (1-1/self.q)*(np.power(self.q, -k)))
                     self.updateSnapshot(t, c, k, [])
+                    self.runningHistNewcontent = self.bitmap
                     return True, [c]
                 else:
                     return False, []
@@ -515,10 +550,10 @@ class CurtainPCSASketch(Sketch):
                         else:
                             newkbitmap[j] = 1
                 self.bitmap[c] = newkbitmap
-                for i in range(11):
-                    if c - i >= 0 and self.states[c-i] + self.offset[c-i] < k + self.offset[c] - i * self.diffbd:
+                for i in range(1, CurtainUpbd):
+                    if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] < k + self.sawtoffset[c] - i * self.diffbd:
                         oldCMIstate = self.states[c-i]
-                        self.states[c-i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
+                        self.states[c-i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                         newCMIstate = self.states[c-i]
                         cList.append(c-i)
                         newCMIbitmap = np.zeros(self.bitmapRange)
@@ -531,9 +566,9 @@ class CurtainPCSASketch(Sketch):
                                 else:
                                     newCMIbitmap[j] = 1
                         self.bitmap[c-i] = newCMIbitmap
-                    if c + i < self.m and self.states[c+i] + self.offset[c+i] < k + self.offset[c] - i * self.diffbd:
+                    if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < k + self.sawtoffset[c] - i * self.diffbd:
                         oldCPIstate = self.states[c+i]
-                        self.states[c+i] = k-i*self.diffbd + self.offset[c] - self.offset[c-i]
+                        self.states[c+i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
                         newCPIstate = self.states[c+i]
                         cList.append(c+i)
                         newCPIbitmap = np.zeros(self.bitmapRange)
@@ -546,13 +581,41 @@ class CurtainPCSASketch(Sketch):
                                 else:
                                     newCPIbitmap[j] = 1
                         self.bitmap[c+i] = newCPIbitmap
+                    if k - i * self.diffbd < 0:
+                        break
                 probBitmap = np.vstack(tuple((1 + np.arange(self.bitmapRange)- self.states[i] - self.offset[i]) for i in range(self.m)))
                 remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap))) * (1 - 1/self.q)
                 self.updateA(remainingAreaBitmap + np.sum(np.power(self.q, -self.states - self.offset)))
                 self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap
                 return True, cList
         else:
             return False, []
+
+    def refresh(self):
+        super(CurtainPCSASketch, self).refresh()
+        self.bitmap = np.ones(self.bitmap.shape)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a/self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1/remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        probBitmap = np.vstack(tuple((1 + np.arange(self.bitmapRange)-self.states[i]-self.offset[i]) for i in range(self.m)))
+        remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap)), axis=1) * (1 - 1/self.q)
+        probList = np.power(1/self.q, self.states + self.offset) + remainingAreaBitmap
+        probListsum = np.sum(probList)
+        c = np.random.choice(np.arange(self.m), p=probList/probListsum)
+        probList_ = np.array([np.power(1/self.q, self.states[c]+self.offset[c]), remainingAreaBitmap[c]])
+        k_ = np.random.choice([0, 1], p=probList_/(np.sum(probList_)))
+        if k_ == 0:
+            k = self.states[c] + np.random.geometric(1-1/self.q)
+        else:
+            bitmapProblist = np.multiply(1-self.bitmap[c], np.power(self.q, np.arange(self.bitmapRange)))
+            k0 = np.random.choice(np.arange(self.bitmapRange), p=bitmapProblist/(np.sum(bitmapProblist)))
+            k = self.states[c] - 1 - k0
+        return np.float64(self.t+deltat), c, k
 
 
 class CurtainStarSketch(Sketch):
@@ -585,47 +648,116 @@ class CurtainStarSketch(Sketch):
         self.Min = 0
 
 
-def updategen(usketch:Sketch):
-    if type(usketch) == CurtainPCSASketch:
-        assert hasattr(usketch, "offset")
-        assert hasattr(usketch, "bitmapRange")
-        assert hasattr(usketch, "bitmap")
-        remainingArea = np.float64(usketch.a/usketch.m)
+class CurtainSecondHighSketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    def __init__(self, pm, pq, pN, pDiffbd, pSecondbd, pcolor='orange', pname="CtnSecondHigh"):
+        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
+        super(CurtainSecondHighSketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=1)
+        self.diffbd = pDiffbd
+        self.runningColSingStr += ["second"]
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
+        self.secondbd = np.int64(pSecondbd)
+        self.secondstates = np.zeros(self.m, dtype=np.int64)
+        self.a = np.sum(np.power(self.q, -self.states - self.offset))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            self.states[c] = k
+            self.secondstates[c] = max(self.secondstates[c], self.states[c] - self.secondbd)
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and (self.states[c]+self.sawtoffset[c]-self.states[c-i]-self.sawtoffset[c-i] > self.diffbd*i):
+                    self.states[c-i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.secondstates[c-i] = max(self.secondstates[c-i], self.states[c-i] - self.secondbd)
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c+i] = k-i*self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.secondstates[c+i] = max(self.secondstates[c+i], self.states[c+i] - self.secondbd)
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            remainingAreaSecond = np.maximum(0, np.power(self.q, -self.secondstates-self.offset-1) - np.power(self.q, -self.states-self.offset))
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset)) + np.sum(remainingAreaSecond))
+            self.updateSnapshot(t, c, k, [])
+            self.runningHistNewcontent = self.secondstates
+            return True, cList
+        elif self.secondstates[c] < k < self.states[c]:
+            self.secondstates[c] = k
+            self.updateMtg()
+            remainingAreaSecond = np.maximum(0, np.power(self.q, -self.secondstates-self.offset-1) - np.power(self.q, -self.states-self.offset))
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset)) + np.sum(remainingAreaSecond))
+            self.updateSnapshot(t, c, k, [])
+            self.runningHistNewcontent = self.secondstates
+            return True, [c]
+        else:
+            return False, []
+
+    def updategen(self):
+        remainingArea = np.float64(self.a/self.m)
         if remainingArea < 1e-8:
             deltat = np.float64(np.random.exponential(1/remainingArea))
         else:
             deltat = np.float64(np.random.geometric(remainingArea))
-        probBitmap = np.vstack(tuple((1 + np.arange(usketch.bitmapRange)-usketch.states[i]-usketch.offset[i]) for i in range(usketch.m)))
-        remainingAreaBitmap = np.sum(np.multiply(1 - usketch.bitmap, np.power(usketch.q, probBitmap)), axis=1) * (1 - 1/usketch.q)
-        probList = np.power(1/usketch.q, usketch.states + usketch.offset) + remainingAreaBitmap
-        probListsum = np.sum(probList)
-        c = np.random.choice(np.arange(usketch.m), p=probList/probListsum)
-        probList_ = np.array([np.power(1/usketch.q, usketch.states[c]+usketch.offset[c]), remainingAreaBitmap[c]])
-        k_ = np.random.choice([0, 1], p=probList_/(np.sum(probList_)))
-        if k_ == 0:
-            k = usketch.states[c] + np.random.geometric(1-1/usketch.q)
-        else:
-            bitmapProblist = np.multiply(1-usketch.bitmap[c], np.power(usketch.q, np.arange(usketch.bitmapRange)))
-            k0 = np.random.choice(np.arange(usketch.bitmapRange), p=bitmapProblist/(np.sum(bitmapProblist)))
-            k = usketch.states[c] - 1 - k0
-        return np.float64(usketch.t+deltat), c, k
-    remainingArea = np.float64(usketch.a / usketch.m)
-    if remainingArea < 1e-8:
-        deltat = np.float64(np.random.exponential(1/remainingArea))
-    else:
-        deltat = np.float64(np.random.geometric(remainingArea))
-    if hasattr(usketch, "offset"):
-        prob = np.power(1/usketch.q, usketch.states + usketch.offset)
-    else:
-        prob = np.power(1/usketch.q, usketch.states)
-    condprob = prob / np.sum(prob)
-    c = np.random.choice(np.arange(usketch.m), p=condprob)
-    # prob of at least k
-    # = sum_k^infty (1-(1-1/q))^(i-1)(1-1/q)
-    # = (1/q)^{k-1}-(1/q)^{k} + ...
-    # = (1/q)^(k-1) :
-    # now you are at k, so the prob of at least k+1 is 1/q^k
-    k = usketch.states[c] + np.random.geometric(1-1/usketch.q)
-    newt = np.float64(usketch.t+deltat)
-    return newt, c, k
+        remainingAreaSecond = np.maximum(0, np.power(self.q, -self.secondstates-self.offset-1) - np.power(self.q, -self.states-self.offset))
+        probList = np.power(1/self.q, self.states + self.offset) + remainingAreaSecond
+        c = np.random.choice(np.arange(self.m), p=probList/np.sum(probList))
 
+        probList_c = np.array([np.power(1/self.q, self.states[c]+self.offset[c]), remainingAreaSecond[c]])
+        k_ = np.random.choice([0, 1], p=probList_c/(np.sum(probList_c)))
+        if k_ == 0 or probList_c[1] == 0:
+            k = self.states[c] + np.random.geometric(1-1/self.q)
+        else:
+            assert self.secondstates[c] <= self.states[c] - 2
+            secondRange = np.arange(self.secondstates[c] + 1, self.states[c])
+            prob_secondrange = np.power(self.q, -secondRange)
+            k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
+        return np.float64(self.t+deltat), c, k
+
+
+
+# def updategen(usketch:Sketch):
+#     if type(usketch) == CurtainPCSASketch:
+#         assert hasattr(usketch, "offset")
+#         assert hasattr(usketch, "bitmapRange")
+#         assert hasattr(usketch, "bitmap")
+#         remainingArea = np.float64(usketch.a/usketch.m)
+#         if remainingArea < 1e-8:
+#             deltat = np.float64(np.random.exponential(1/remainingArea))
+#         else:
+#             deltat = np.float64(np.random.geometric(remainingArea))
+#         probBitmap = np.vstack(tuple((1 + np.arange(usketch.bitmapRange)-usketch.states[i]-usketch.offset[i]) for i in range(usketch.m)))
+#         remainingAreaBitmap = np.sum(np.multiply(1 - usketch.bitmap, np.power(usketch.q, probBitmap)), axis=1) * (1 - 1/usketch.q)
+#         probList = np.power(1/usketch.q, usketch.states + usketch.offset) + remainingAreaBitmap
+#         probListsum = np.sum(probList)
+#         c = np.random.choice(np.arange(usketch.m), p=probList/probListsum)
+#         probList_ = np.array([np.power(1/usketch.q, usketch.states[c]+usketch.offset[c]), remainingAreaBitmap[c]])
+#         k_ = np.random.choice([0, 1], p=probList_/(np.sum(probList_)))
+#         if k_ == 0:
+#             k = usketch.states[c] + np.random.geometric(1-1/usketch.q)
+#         else:
+#             bitmapProblist = np.multiply(1-usketch.bitmap[c], np.power(usketch.q, np.arange(usketch.bitmapRange)))
+#             k0 = np.random.choice(np.arange(usketch.bitmapRange), p=bitmapProblist/(np.sum(bitmapProblist)))
+#             k = usketch.states[c] - 1 - k0
+#         return np.float64(usketch.t+deltat), c, k
+#     remainingArea = np.float64(usketch.a / usketch.m)
+#     if remainingArea < 1e-8:
+#         deltat = np.float64(np.random.exponential(1/remainingArea))
+#     else:
+#         deltat = np.float64(np.random.geometric(remainingArea))
+#     if hasattr(usketch, "offset"):
+#         prob = np.power(1/usketch.q, usketch.states + usketch.offset)
+#     else:
+#         prob = np.power(1/usketch.q, usketch.states)
+#     condprob = prob / np.sum(prob)
+#     c = np.random.choice(np.arange(usketch.m), p=condprob)
+#     # prob of at least k
+#     # = sum_k^infty (1-(1-1/q))^(i-1)(1-1/q)
+#     # = (1/q)^{k-1}-(1/q)^{k} + ...
+#     # = (1/q)^(k-1) :
+#     # now you are at k, so the prob of at least k+1 is 1/q^k
+#     k = usketch.states[c] + np.random.geometric(1-1/usketch.q)
+#     newt = np.float64(usketch.t+deltat)
+#     return newt, c, k

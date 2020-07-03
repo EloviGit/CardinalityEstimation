@@ -25,18 +25,27 @@ import tqdm
 #          "CtnStar-9.0-6", "CtnStar-10.0-6", "CtnStar-12.0-6",
 # ]
 
-qList = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0]
-names = ["CtnSTUnifOffs-%.1f-1.5" % q for q in qList]
+# qList = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0]
+# qList = [2.0, 3.0, 4.0, 5.0, 6.0]
+#qList = [3.7, 3.75, 3.8, 3.85, 3.9, 3.95, 4.0, 4.05, 4.1, 4.15, 4.2, 4.25, 4.3]
+# qList = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0]
+# qList = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5]
+# qList = [4.0]
+qList = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+
+names = ["CtnPCSA-"+str(q)+"-3.5-2" for q in qList]
+
+bitused = 5
 
 datname = "Mtg"
-Round = 5000
+Round = 500
 
-samplN = 1000
-expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 20
+samplN = 600
+expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 6
 samplx = np.power(10, expsamplx)
 
-InsertionInx = 1000 # 1e10
-InsertionT = 1e10
+InsertionInx = 600 # 1e10
+InsertionT = 1e6
 
 AllDf = pd.DataFrame(np.array(np.zeros((Round, len(names))), dtype=np.float64),
                      columns=names)
@@ -60,7 +69,11 @@ AllDf = pd.DataFrame(np.array(np.zeros((Round, len(names))), dtype=np.float64),
 #filenames = ["results/T9/V1811_Mtg_4bits_"+name+".csv" for name in names]
 # filenames = ["results/T9/V2243_Mtg_2bits_"+name+".csv" for name in names]
 # filenames = ["results/T9/V2243_Mtg_2bits_"+name+".csv" for name in names]
-filenames = ["results/T10/V271453_Mtg_2bits_"+name+".csv" for name in names]
+# filenames = ["results/T10/V271453_Mtg_2bits_"+name+".csv" for name in names]
+# filenames = ["results/T11/V291944_Mtg_2bits_"+name+".csv" for name in names]
+# filenames = ["results/T11/V302300_Mtg_4bits_"+name+".csv" for name in names]
+# filenames = ["results/T11/V07010216_Mtg_2bits_"+name+".csv" for name in names]
+filenames = ["results/"+utl.VersionStr+"/"+utl.RunStr+"_"+datname+"_"+str(bitused)+"bits_"+name+".csv" for name in names]
 
 
 for i in range(len(names)):
@@ -69,7 +82,7 @@ for i in range(len(names)):
     values = np.array(newdf.iloc[InsertionInx], dtype=np.float64)
     #relvar = np.square(values/1e15 - 1)
     ratio = values/InsertionT
+    # ratio = values
     AllDf[name] = ratio[1:]
 
-AllDf.to_csv("cong/"+utl.VersionStr+"/"+datname+"_CtnSTUnifOffs_2bit_ratio_1e10_"+utl.getTimeString()+".csv")
-
+AllDf.to_csv("cong/"+utl.VersionStr+"/"+datname+"_CtnPCSA_3.5_4bit_ratio_1e6_"+utl.getTimeString()+".csv")
