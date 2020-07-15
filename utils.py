@@ -2,9 +2,11 @@ import numpy as np
 import time
 import pickle
 import matplotlib.pyplot as plt
+import math
+import os
 
-VersionStr = "T12"
-RunStr = "V07011528"
+VersionStr = "T19"
+RunStr = "V07151431"
 Infty = 1000
 MaxChange = 1000
 
@@ -96,3 +98,25 @@ def getPlotTitle(gm, gq, gN, gr, gR):
         return "m=%d, N=%d, %d/%d round" % (gm, gN, gr+1, gR)
     else:
         return "m=%d, q=%d, N=%d, %d/%d round" % (gm, gq, gN, gr+1, gR)
+
+
+def AdaLazyCtnPCSA_VarMemProdThry(q, a, h):
+    return math.log(q) * (2 / (q ** (a - 0.5) - 1) + (1 / q) + q ** h - q ** (h - 1)) / (2 * ((q ** h) - (q ** (h - 1)))) * (math.log2(2 * a) + h)
+
+
+def CtnSTUnifOffs_VarMrnProfThry(q, a):
+    return AdaLazyCtnPCSA_VarMemProdThry(q, a, 0)
+
+
+def mkdir(path=VersionStr):
+    rootpath = "D:\\PYTHON\\myPythonPrograms\\CardinalityEstimation\\"
+    filepath = ["results\\", "cong\\", "TTLHist\\", "figs\\"]
+    created = True
+    for f_path in filepath:
+        m_path = rootpath + f_path + path
+        if not os.path.exists(m_path):
+            os.makedirs(m_path)
+            created = False
+    if created:
+        print("New version directories created.")
+    return created

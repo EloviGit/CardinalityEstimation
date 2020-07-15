@@ -133,6 +133,7 @@ class Sketch:
 
 class LLSketch(Sketch):
     def __init__(self, pm, pq, pN, pcolor="red", pname="LL"):
+        mpname = "LL-" + str(pq)
         super(LLSketch, self).__init__(pm, pq, pN, pcolor, pname)
 
     def update(self, c, k, t):
@@ -486,6 +487,10 @@ class CurtainSTUnifOffstSketch(Sketch):
         self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
 
+    def refresh(self):
+        super(CurtainSTUnifOffstSketch, self).refresh()
+        self.updateA(np.sum(np.power(self.q, -self.states - self.offset)))
+
     def update(self, c, k, t):
         if k > self.states[c]:
             cList = [c]
@@ -508,8 +513,6 @@ class CurtainSTUnifOffstSketch(Sketch):
 
 
 class CurtainPCSASketch(Sketch):
-    # this sketch ensures the difference of adjacent counters <= pDiffbd.
-    # this sketch has not finished.
     def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="CtnPCSA"):
         mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
         super(CurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname ,prunhistLenNew=bitmapRange)
@@ -595,6 +598,8 @@ class CurtainPCSASketch(Sketch):
     def refresh(self):
         super(CurtainPCSASketch, self).refresh()
         self.bitmap = np.ones(self.bitmap.shape)
+        self.a = np.sum(np.power(self.q, -self.states - self.offset))
+
 
     def updategen(self):
         remainingArea = np.float64(self.a/self.m)
@@ -715,6 +720,294 @@ class CurtainSecondHighSketch(Sketch):
             prob_secondrange = np.power(self.q, -secondRange)
             k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
         return np.float64(self.t+deltat), c, k
+
+
+class LazyCurtainPCSASketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    # this sketch has not finished.
+    def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="LazyCtnPCSA"):
+        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        super(LazyCurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=bitmapRange)
+        self.states += bitmapRange
+        self.bitmap = np.zeros((pm, bitmapRange))
+        self.bitmapRange = bitmapRange
+        self.diffbd = pDiffbd
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx % 2 == 0, 0.5, 0)
+        self.offset = np.where(ceofx % 2 == 0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64) / (2 * pm)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.runningColSingStr += [str(i) + "-th bit" for i in range(bitmapRange)]
+
+    def update(self, c, k, t):
+        if k >= self.states[c] - self.bitmapRange + 1:
+            oldstate = self.states[c]
+            if k <= self.states[c]:
+                if self.bitmap[c, oldstate - k] == 0:
+                    self.updateMtg()
+                    self.bitmap[c, oldstate - k] = 1
+                    self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k+1-self.offset[c])))
+                    self.updateSnapshot(t, c, k, [])
+                    self.runningHistNewcontent = self.bitmap
+                    return True, [c]
+                else:
+                    return False, []
+            else:
+                self.states[c] = k
+                cList = [c]
+                self.updateMtg()
+                newkbitmap = np.zeros(self.bitmapRange)
+                newkbitmap[0] = 1
+                if k - oldstate < self.bitmapRange:
+                    newkbitmap[k-oldstate:self.bitmapRange] = (self.bitmap[c])[0:oldstate+self.bitmapRange-k]
+                self.bitmap[c] = newkbitmap
+                for i in range(1, CurtainUpbd):
+                    if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                        oldCMIstate = self.states[c - i]
+                        self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                        newCMIstate = self.states[c - i]
+                        cList.append(c - i)
+                        newCMIbitmap = np.zeros(self.bitmapRange)
+                        if newCMIstate - oldCMIstate < self.bitmapRange:
+                            newCMIbitmap[newCMIstate-oldCMIstate:self.bitmapRange] = (self.bitmap[c-i])[0:oldCMIstate+self.bitmapRange-newCMIstate]
+                        self.bitmap[c - i] = newCMIbitmap
+                    if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                        oldCPIstate = self.states[c + i]
+                        self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                        newCPIstate = self.states[c + i]
+                        cList.append(c + i)
+                        newCPIbitmap = np.zeros(self.bitmapRange)
+                        if newCPIstate - oldCPIstate < self.bitmapRange:
+                            newCPIbitmap[newCPIstate-oldCPIstate:self.bitmapRange] = (self.bitmap[c+i])[0:oldCPIstate+self.bitmapRange-newCPIstate]
+                        self.bitmap[c + i] = newCPIbitmap
+                    if k - i * self.diffbd < 0:
+                        break
+                probBitmap = np.vstack(tuple((1 + np.arange(self.bitmapRange) - self.states[i] - self.offset[i]) for i in range(self.m)))
+                remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap))) * (1 - 1 / self.q)
+                self.updateA(remainingAreaBitmap + np.sum(np.power(self.q, -self.states - self.offset)))
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap
+                return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(LazyCurtainPCSASketch, self).refresh()
+        self.bitmap = np.zeros(self.bitmap.shape)
+        self.states += self.bitmapRange
+        self.a = np.sum(np.power(self.q, -self.offset))
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        probBitmap = np.vstack(tuple((1+np.arange(self.bitmapRange) - self.states[i] - self.offset[i]) for i in range(self.m)))
+        remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap)), axis=1) * (1 - 1 / self.q)
+        probList = np.power(1 / self.q, self.states + self.offset) + remainingAreaBitmap
+        c = np.random.choice(np.arange(self.m), p=probList / np.sum(probList))
+        probList_ = np.array([np.power(1 / self.q, self.states[c] + self.offset[c]), remainingAreaBitmap[c]])
+        k_ = np.random.choice([0, 1], p=probList_ / (np.sum(probList_)))
+        if k_ == 0:
+            k = self.states[c] + np.random.geometric(1 - 1 / self.q)
+        else:
+            bitmapProblist = np.multiply(1 - self.bitmap[c], np.power(self.q, np.arange(self.bitmapRange)))
+            k0 = np.random.choice(np.arange(self.bitmapRange), p=bitmapProblist / (np.sum(bitmapProblist)))
+            k = self.states[c] - k0
+        return np.float64(self.t + deltat), c, k
+
+
+class AdaLazyCurtainPCSASketch(Sketch):
+    def __init__(self, pm, pq, pN, pDiffbd, pfbitmapRange, pcolor='orange', pname="AdaLazyCtnPCSA"):
+        bitmapRange = pfbitmapRange + 1
+        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        super(AdaLazyCurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=bitmapRange)
+        self.states += bitmapRange - 1
+        self.bitmap = np.zeros((pm, bitmapRange))
+        self.bitmap[:, -1] = 1
+        self.bitmapRange = bitmapRange
+        self.diffbd = pDiffbd
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx % 2 == 0, 0.5, 0)
+        self.offset = np.where(ceofx % 2 == 0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64) / (2 * pm)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.runningColSingStr += [str(i) + "-th bit" for i in range(bitmapRange)]
+        self.updateA(self.a)
+
+    def update(self, c, k, t):
+        if k >= self.states[c] - self.bitmapRange + 1:
+            oldstate = self.states[c]
+            if k <= self.states[c]:
+                if self.bitmap[c, oldstate - k] == 0:
+                    self.updateMtg()
+                    self.bitmap[c, oldstate - k] = 1
+                    self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k+1-self.offset[c])))
+                    self.updateSnapshot(t, c, k, [])
+                    self.runningHistNewcontent = self.bitmap
+                    return True, [c]
+                else:
+                    return False, []
+            else:
+                self.states[c] = k
+                cList = [c]
+                self.updateMtg()
+                newkbitmap = np.zeros(self.bitmapRange)
+                newkbitmap[0] = 1
+                if k - oldstate < self.bitmapRange:
+                    newkbitmap[k-oldstate:self.bitmapRange] = (self.bitmap[c])[0:oldstate+self.bitmapRange-k]
+                self.bitmap[c] = newkbitmap
+                for i in range(1, CurtainUpbd):
+                    if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                        oldCMIstate = self.states[c - i]
+                        self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                        newCMIstate = self.states[c - i]
+                        cList.append(c - i)
+                        newCMIbitmap = np.zeros(self.bitmapRange)
+                        if newCMIstate - oldCMIstate < self.bitmapRange:
+                            newCMIbitmap[newCMIstate-oldCMIstate:self.bitmapRange] = (self.bitmap[c-i])[0:oldCMIstate+self.bitmapRange-newCMIstate]
+                        newCMIbitmap[-1] = 1
+                        self.bitmap[c - i] = newCMIbitmap
+                    if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                        oldCPIstate = self.states[c + i]
+                        self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                        newCPIstate = self.states[c + i]
+                        cList.append(c + i)
+                        newCPIbitmap = np.zeros(self.bitmapRange)
+                        if newCPIstate - oldCPIstate < self.bitmapRange:
+                            newCPIbitmap[newCPIstate-oldCPIstate:self.bitmapRange] = (self.bitmap[c+i])[0:oldCPIstate+self.bitmapRange-newCPIstate]
+                        newCPIbitmap[-1] = 1
+                        self.bitmap[c + i] = newCPIbitmap
+                    if k - i * self.diffbd < 0:
+                        break
+                probBitmap = np.vstack(tuple((1 + np.arange(self.bitmapRange) - self.states[i] - self.offset[i]) for i in range(self.m)))
+                remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap))) * (1 - 1 / self.q)
+                self.updateA(remainingAreaBitmap + np.sum(np.power(self.q, -self.states - self.offset)))
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap
+                return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(AdaLazyCurtainPCSASketch, self).refresh()
+        self.bitmap = np.zeros(self.bitmap.shape)
+        self.bitmap[:, -1] = 1
+        self.states += self.bitmapRange - 1
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.updateA(self.a)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        probBitmap = np.vstack(tuple((1+np.arange(self.bitmapRange) - self.states[i] - self.offset[i]) for i in range(self.m)))
+        remainingAreaBitmap = np.sum(np.multiply(1 - self.bitmap, np.power(self.q, probBitmap)), axis=1) * (1 - 1 / self.q)
+        probList = np.power(1 / self.q, self.states + self.offset) + remainingAreaBitmap
+        c = np.random.choice(np.arange(self.m), p=probList / np.sum(probList))
+        probList_ = np.array([np.power(1 / self.q, self.states[c] + self.offset[c]), remainingAreaBitmap[c]])
+        k_ = np.random.choice([0, 1], p=probList_ / (np.sum(probList_)))
+        if k_ == 0:
+            k = self.states[c] + np.random.geometric(1 - 1 / self.q)
+        else:
+            bitmapProblist = np.multiply(1 - self.bitmap[c], np.power(self.q, np.arange(self.bitmapRange)))
+            k0 = np.random.choice(np.arange(self.bitmapRange), p=bitmapProblist / (np.sum(bitmapProblist)))
+            k = self.states[c] - k0
+        return np.float64(self.t + deltat), c, k
+
+
+class AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(Sketch):
+    def __init__(self, pm, pq, pN, pverbos=0, pcolor='orange', pname="AdaLazyCtnPCSA"):
+        mpname = pname + "-" + str(pq) + "-" + str(1.5) + "-" + str(1)
+        super(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2)
+        self.states += 1
+        self.bitmap = np.ones(pm) # 1 for not chosen, 0 for already appeared
+        self.tension = np.zeros(pm) # 1 for not in tension, 0 for in tension
+        self.diffbd = 1.5
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx % 2 == 0, 0.5, 0)
+        self.offset = np.where(ceofx % 2 == 0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64) / (2 * pm)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.runningColSingStr += ["bit below", "tension"]
+        self.updateA(self.a)
+        self.verbos = pverbos
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = []
+            if self.verbos != 0:
+                cList.append(c)
+            self.updateMtg()
+            if k == self.states[c] + 1:
+                if self.tension[c] == 1:
+                    self.bitmap[c] = 0
+            else:
+                self.bitmap[c] = 1
+            self.tension[c] = 1
+            self.states[c] = k
+
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c - i)
+                    self.bitmap[c - i] = 1
+                    self.tension[c - i] = 0
+                if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c + i)
+                    self.bitmap[c + i] = 1
+                    self.tension[c + i] = 0
+                if k - i * self.diffbd < 0:
+                    break
+            belowProbSum = np.dot(np.power(1/self.q, self.states + self.offset - self.tension - 1), self.bitmap) * (1 - 1/self.q)
+            self.updateA(belowProbSum + np.sum(np.power(1/self.q, self.states + self.offset)))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k == self.states[c] - self.tension[c] and self.bitmap[c] == 1:
+            self.updateMtg()
+            self.bitmap[c] = 0
+            self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k + 1 - self.offset[c])))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch, self).refresh()
+        self.bitmap = np.ones(self.bitmap.shape)
+        self.states += 1
+        self.tension = np.zeros(self.tension.shape)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.updateA(self.a)
+
+    def updategen(self):
+        if self.rega < 1e-8:
+            deltat = np.float64(np.random.exponential(self.invrega))
+        else:
+            deltat = np.float64(np.random.geometric(self.rega))
+        belowProb = np.multiply(np.power(1/self.q, self.states + self.offset - self.tension - 1), self.bitmap) * (1 - 1/self.q)
+        upperProb = np.power(1/self.q, self.states + self.offset)
+        belowSum = np.sum(belowProb)
+        upperSum = np.sum(upperProb)
+        upOrbelow = np.random.choice([0, 1], p=[belowSum/(belowSum+upperSum), upperSum/(belowSum+upperSum)])
+        if upOrbelow == 0:
+            c = np.random.choice(np.arange(self.m), p=belowProb/belowSum)
+            k = self.states[c] - self.tension[c]
+        else:
+            c = np.random.choice(np.arange(self.m), p=upperProb/upperSum)
+            k = self.states[c] + np.random.geometric(1 - 1/self.q)
+        return np.float64(self.t + deltat), c, k
 
 
 
