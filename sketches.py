@@ -7,6 +7,7 @@ scalingfactor = 1000
 scalingfactors = [1, 1000, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27, 1e30]
 CurtainUpbd = 100
 SnapMaxChange = 100000
+PCSAUpbd = 40
 
 
 class Sketch:
@@ -43,13 +44,8 @@ class Sketch:
         return True, []
 
     def updateMtg(self):
-        self.Mtg += self.m/self.a
+        self.Mtg += self.invrega
         return
-        # if self.Mtg > scalingfactor:
-        #     self.Mtg /= scalingfactor
-        #     self.mtgScalinglvl += 1
-        # self.Mtg += deltaMtg/scalingfactors[self.mtgScalinglvl]
-        # self.floatLogMtg = math.log(self.Mtg)+self.mtgScalinglvl*math.log(scalingfactor)
 
     def updateA(self, newA):
         self.a = newA
@@ -133,8 +129,8 @@ class Sketch:
 
 class LLSketch(Sketch):
     def __init__(self, pm, pq, pN, pcolor="red", pname="LL"):
-        mpname = "LL-" + str(pq)
-        super(LLSketch, self).__init__(pm, pq, pN, pcolor, pname)
+        mpname = "-".join([pname, str(pm), str(pq)])
+        super(LLSketch, self).__init__(pm, pq, pN, pcolor, mpname)
 
     def update(self, c, k, t):
         if k > self.states[c]:
@@ -149,7 +145,7 @@ class LLSketch(Sketch):
 
 class ThrsSketch(Sketch):
     def __init__(self, pm, pq, pN, pUpbd, pcolor='green', pname="Thrs"):
-        mpname = pname+"-"+str(pq)+"-"+str(pUpbd)
+        mpname = "-".join([pname, str(pm), str(pq), str(pUpbd)])
         super(ThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 2)
         self.upbd = pUpbd
         self.DeadFlags = np.zeros(pm, dtype=int) + 1 # 1 for alive, 0 for dead
@@ -185,7 +181,7 @@ class CdbkSketch(Sketch):
     def __init__(self, pm, pq, pN, pCodebookSize, pcolor="blue", pname="Cdbk"):
         _m = int(pm/3)
         m = _m * 3
-        mpname = pname+"-"+str(pCodebookSize)
+        mpname = "-".join([pname, str(pm), str(pq), str(pCodebookSize)])
         super(CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.Codebook = getCodebook(pCodebookSize)
         self.DeadFlags = np.zeros(pm, dtype=int) + 1
@@ -229,7 +225,7 @@ class CdbkSketch(Sketch):
 class AdaThrsSketch(Sketch):
     # when the sum of sketches over the minimum value exceeds a half, raise the min value
     def __init__(self, pm, pq, pN, pUpbd, pcolor='yellow', pname="AdaThrs", pAdaFrac=0.5):
-        mpname = pname + "-" + str(pUpbd) + "-" + str(pAdaFrac)
+        mpname = "-".join([pname, str(pm), str(pq), str(pUpbd), str(pAdaFrac)])
         super(AdaThrsSketch, self).__init__(pm, pq, pN, pcolor, mpname, 3, MaxChange)
         self.upbd = pUpbd
         self.DeadFlags = np.zeros(pm, dtype=int) + 1 # 1 for alive, 0 for dead
@@ -280,7 +276,7 @@ class Min2CdbkSketch(Sketch):
     def __init__(self, pm, pq, pN, pCodebookSize, pcolor="orange", pname="Min2Cdbk"):
         _m = int(pm/3)
         m = _m * 3
-        mpname = pname+"-"+str(pCodebookSize)
+        mpname = "-".join([pname, str(pm), str(pq), str(pCodebookSize)])
         super(Min2CdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.Codebook = getCodebook(pCodebookSize)
         self.DeadFlags = np.zeros(pm, dtype=int) + 1
@@ -325,7 +321,7 @@ class ArtifCdbkSketch(Sketch):
     def __init__(self, pm, pq, pN, pArtifCodebookName, pcolor="purple", pname="ArtifCdbk"):
         _m = int(pm/3)
         m = _m * 3
-        mpname = pname+"-"+pArtifCodebookName
+        mpname = "-".join([pname, str(pm), str(pq), str(pArtifCodebookName)])
         super(ArtifCdbkSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.ArtifCodebook = getattr(ac, pArtifCodebookName)
         self._m = _m
@@ -370,7 +366,7 @@ class ArtifCdbkNSketch(Sketch):
     def __init__(self, pm, pq, pN, pArtifCodebookName, pcolor="purple", pname="ArtifCdbkN"):
         _m = int(pm/3)
         m = _m * 3
-        mpname = pname+"-"+pArtifCodebookName
+        mpname = "-".join([pname, str(pm), str(pq), str(pArtifCodebookName)])
         super(ArtifCdbkNSketch, self).__init__(m, pq, pN, pcolor, mpname, 2, MaxChange)
         self.ArtifCodebook = getattr(ac, pArtifCodebookName)
         self._m = _m
@@ -417,8 +413,8 @@ class ArtifCdbkNSketch(Sketch):
 
 class CurtainSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
-    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="Crtn"):
-        mpname = pname+"-"+str(pDiffbd)
+    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CrtnLL"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd)])
         super(CurtainSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd
 
@@ -447,8 +443,8 @@ class CurtainSketch(Sketch):
 
 class CurtainSawTeethSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
-    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSawTeeth"):
-        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
+    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSawTeethLL"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd)])
         super(CurtainSawTeethSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd
         ceofx = np.arange(pm)
@@ -478,8 +474,8 @@ class CurtainSawTeethSketch(Sketch):
 
 class CurtainSTUnifOffstSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
-    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSTUnifOffs"):
-        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
+    def __init__(self, pm, pq, pN, pDiffbd, pcolor='orange', pname="CtnSTUnifOffsLL"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd)])
         super(CurtainSTUnifOffstSketch, self).__init__(pm, pq, pN, pcolor, mpname)
         self.diffbd = pDiffbd
         ceofx = np.arange(pm)
@@ -514,7 +510,7 @@ class CurtainSTUnifOffstSketch(Sketch):
 
 class CurtainPCSASketch(Sketch):
     def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="CtnPCSA"):
-        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(bitmapRange)])
         super(CurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname ,prunhistLenNew=bitmapRange)
         self.bitmap = np.ones((pm, bitmapRange)) # the first bit would always be 1, so not stored in this bitmap
         # in the beginning all states[c] = 1 so we should let the bitmap all be 1
@@ -600,7 +596,6 @@ class CurtainPCSASketch(Sketch):
         self.bitmap = np.ones(self.bitmap.shape)
         self.a = np.sum(np.power(self.q, -self.states - self.offset))
 
-
     def updategen(self):
         remainingArea = np.float64(self.a/self.m)
         if remainingArea < 1e-8:
@@ -625,7 +620,7 @@ class CurtainPCSASketch(Sketch):
 
 class CurtainStarSketch(Sketch):
     def __init__(self, pm, pq, pN, pUpbd, pcolor='green', pname="CtnStar"):
-        mpname = pname+"-"+str(pq)+"-"+str(pUpbd)
+        mpname = "-".join([pname, str(pm), str(pq), str(pUpbd)])
         super(CurtainStarSketch, self).__init__(pm, pq, pN, pcolor, mpname, 1)
         self.upbd = pUpbd
         self.Min = 0
@@ -656,7 +651,7 @@ class CurtainStarSketch(Sketch):
 class CurtainSecondHighSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     def __init__(self, pm, pq, pN, pDiffbd, pSecondbd, pcolor='orange', pname="CtnSecondHigh"):
-        mpname = pname+"-"+str(pq)+"-"+str(pDiffbd)
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(pSecondbd)])
         super(CurtainSecondHighSketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=1)
         self.diffbd = pDiffbd
         self.runningColSingStr += ["second"]
@@ -726,7 +721,7 @@ class LazyCurtainPCSASketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     # this sketch has not finished.
     def __init__(self, pm, pq, pN, pDiffbd, bitmapRange, pcolor='orange', pname="LazyCtnPCSA"):
-        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(bitmapRange)])
         super(LazyCurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=bitmapRange)
         self.states += bitmapRange
         self.bitmap = np.zeros((pm, bitmapRange))
@@ -820,7 +815,7 @@ class LazyCurtainPCSASketch(Sketch):
 class AdaLazyCurtainPCSASketch(Sketch):
     def __init__(self, pm, pq, pN, pDiffbd, pfbitmapRange, pcolor='orange', pname="AdaLazyCtnPCSA"):
         bitmapRange = pfbitmapRange + 1
-        mpname = pname + "-" + str(pq) + "-" + str(pDiffbd) + "-" + str(bitmapRange)
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(bitmapRange)])
         super(AdaLazyCurtainPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=bitmapRange)
         self.states += bitmapRange - 1
         self.bitmap = np.zeros((pm, bitmapRange))
@@ -919,7 +914,7 @@ class AdaLazyCurtainPCSASketch(Sketch):
 
 class AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(Sketch):
     def __init__(self, pm, pq, pN, pverbos=0, pcolor='orange', pname="AdaLazyCtnPCSA"):
-        mpname = pname + "-" + str(pq) + "-" + str(1.5) + "-" + str(1)
+        mpname = "-".join([pname, str(pm), str(pq), str(1.5), str(1)])
         super(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2)
         self.states += 1
         self.bitmap = np.ones(pm) # 1 for not chosen, 0 for already appeared
@@ -1007,6 +1002,93 @@ class AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(Sketch):
         else:
             c = np.random.choice(np.arange(self.m), p=upperProb/upperSum)
             k = self.states[c] + np.random.geometric(1 - 1/self.q)
+        return np.float64(self.t + deltat), c, k
+
+
+class GroupCurtainPCSA(Sketch):
+    def __init__(self, pm, pq, pN, pDiffbd, pfbitmapRange, pgroupSize=3, pverbos=0, pCR=12, pcolor='orange', pname="GrpCtnPCSA"):
+        assert pm % (2*pgroupSize) == 0
+        self._m = pm/pgroupSize
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(pfbitmapRange)])
+        self.newcontentRange = pCR
+        super(GroupCurtainPCSA, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=pCR)
+        self.states += pfbitmapRange - 1
+        self.bitmap = np.ones((pm, PCSAUpbd)) # 0 for seen, 1 for not seen, remaining area
+        # position i: (1-1/q)(1/q)^i; e.g. 0: 1-1/q; 1: 1/q-1/q^2
+        self.bitmapRange = pfbitmapRange
+        self.diffbd = pDiffbd
+        self.g = pgroupSize
+        self.verbos = pverbos
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where((ceofx//pgroupSize) % 2 == 0, 0.5, 0)
+        self.offset = np.where((ceofx//pgroupSize) % 2 == 0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64) / (2 * pm)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.runningColSingStr += [str(i) + "-th bit" for i in range(pCR)]
+        self.updateA(self.a)
+        self.probbitmap = np.multiply(np.power(1/self.q, self.bitmap-self.offset.reshape(self.m, 1)), np.power(1/self.q, np.arange(PCSAUpbd))*(1-1/self.q))
+        self.abovePCSAUpbd_aList = np.power(1/self.q, PCSAUpbd + self.offset)
+        self.abovePCSAUpbd_a = np.sum(self.abovePCSAUpbd_aList)
+
+    def update(self, c, k, t):
+        g = self.g
+        if k > self.states[c]:
+            _c = c // g
+            cList = [_c * g + i for i in range(g)]
+            self.updateMtg()
+            self.states[_c*g:(_c+1)*g] = k
+            self.bitmap[c, k] = 0
+            for _i in range(1, CurtainUpbd):
+                if _c-_i>=0 and self.states[(_c-_i)*g]+self.sawtoffset[(_c-_i)*g]<k+self.sawtoffset[_c*g]-_i*self.diffbd:
+                    self.states[(_c-_i)*g:(_c-_i+1)*g]=k-_i*self.diffbd+self.sawtoffset[_c*g]-self.sawtoffset[(_c-_i)*g]
+                    cList += [(_c-_i)*g+i for i in range(g)]
+                if _c+_i<self._m and self.states[(_c+_i)*g]+self.sawtoffset[(_c+_i)*g]<k+self.sawtoffset[_c*g]-_i*self.diffbd:
+                    self.states[(_c+_i)*g:(_c+_i+1)*g]=k-_i*self.diffbd+self.sawtoffset[_c*g]-self.sawtoffset[(_c-_i)*g]
+                    cList += [(_c+_i)*g+i for i in range(g)]
+                if k - _i * self.diffbd < 0:
+                    break
+            for i in cList:
+                self.bitmap[i, 0:self.states[i]] = 0
+            self.updateA(np.sum(np.multiply(self.bitmap, self.probbitmap)) + self.abovePCSAUpbd_a)
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap[:, 0:self.newcontentRange]
+            else:
+                self.t = t
+            return True, cList
+        elif k >= self.states[c] - self.bitmapRange + 1 and self.bitmap[c, k] == 1:
+            self.updateMtg()
+            self.bitmap[c, k] = 0
+            self.updateA(self.a - self.probbitmap[c, k])
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap[:, 0:self.newcontentRange]
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(GroupCurtainPCSA, self).refresh()
+        self.bitmap = np.ones(self.bitmap.shape)
+        self.states += self.bitmapRange - 1
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.updateA(self.a)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+
+        probBitmap = np.multiply(self.bitmap, self.probbitmap)
+        prob_c = np.sum(probBitmap, axis=1) + self.abovePCSAUpbd_aList
+        c = np.random.choice(np.arange(self.m), p=prob_c / np.sum(prob_c))
+        probList_ = np.hstack((probBitmap[c], self.abovePCSAUpbd_aList[c]))
+        k = np.random.choice(np.arange(PCSAUpbd+1), p=probList_/(np.sum(probList_)))
+        if k == PCSAUpbd:
+            k += np.random.geometric(1 - 1 / self.q)
         return np.float64(self.t + deltat), c, k
 
 

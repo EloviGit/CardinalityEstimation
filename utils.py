@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import math
 import os
 
-VersionStr = "T19"
-RunStr = "V07151431"
+VersionStr = "T21"
+RunStr = "V07201430"
 Infty = 1000
 MaxChange = 1000
 
@@ -104,6 +104,10 @@ def AdaLazyCtnPCSA_VarMemProdThry(q, a, h):
     return math.log(q) * (2 / (q ** (a - 0.5) - 1) + (1 / q) + q ** h - q ** (h - 1)) / (2 * ((q ** h) - (q ** (h - 1)))) * (math.log2(2 * a) + h)
 
 
+def GroupCtnPCSA_VarMemProdThry(q, a, h, g):
+    return math.log(q) * (g * (2 / (q ** (a - 0.5) - 1) + 1) + q ** h - q ** (h - 1)) / (2 * ((q ** h) - (q ** (h - 1)))) * (math.log2(2 * a)/g + h)
+
+
 def CtnSTUnifOffs_VarMrnProfThry(q, a):
     return AdaLazyCtnPCSA_VarMemProdThry(q, a, 0)
 
@@ -120,3 +124,17 @@ def mkdir(path=VersionStr):
     if created:
         print("New version directories created.")
     return created
+
+
+def pdf_count(data, splits=100, p_range=0.5, center=1.0):
+    counter_a = np.zeros(splits, dtype=int)
+    for i in range(len(data)):
+        x1 = int((data[i]-center)*splits/(2*p_range) + splits/2)
+        if 0 <= x1 < splits:
+            counter_a[x1] += 1
+    return counter_a
+
+
+def pdf_base(splits=100, p_range=0.5, center=1.0):
+    return (np.arange(splits)/splits-0.5)*(2*p_range)+center
+

@@ -10,50 +10,50 @@ import sys
 utl.mkdir()
 
 #Curtainbit, Boardbit = 2, 1
-Round = 3000
-N = 20000
+Round = 30000
+N = 1e6
 OnlySaveLast = True
 ToSave = False
 SaveHistIni = 0
 
-MaxBit = 12000
+MaxBit = 1200
 #BitperCounter = Curtainbit + Boardbit
 #m = int(MaxBit/BitperCounter)
-SuperInfty = 1e6
 # Upbd = (2**BitperCounter) - 2
 # Size = 511
 # AcName = "ac393"
 # AcNName = "ac511N"
 # AdaFrac = 0.2
-samplN = 600
-expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * 6
+scale = 6
+samplN = 100 * scale
+expsamplx = np.array(np.arange(samplN+1), dtype=np.float64)/samplN * scale
 samplx = np.power(10, expsamplx)
 
 
 Sketches = [
-            sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(400, 2.91, N, pverbos=1),
-            #sk.CurtainSTUnifOffstSketch(600, 3.94, N, 1.5),
-            #sk.ThrsSketch(300, 2.0, N, 14),
+            sk.GroupCurtainPCSA(450, 4.0, N, 1.5, 2, pgroupSize=3, pverbos=0)
+            #sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(m, 2.91, N*m, pverbos=1) for m in [71, 141, 283, 566, 1131]
+            #sk.CurtainSTUnifOffstSketch(1500, 3.94, N, 1.5),
+            #sk.ThrsSketch(750, 2.0, N, 14),
             ]
 
+MtgAlldf = pd.DataFrame([])
+regAAlldf = pd.DataFrame([])
 RatioAlldf = pd.DataFrame(np.zeros((Round, len(Sketches))), columns=[r_sketch.name for r_sketch in Sketches])
 for sketch in Sketches:
     SaveHist = SaveHistIni
     if ToSave:
         MtgAlldf = pd.DataFrame(np.zeros((samplN+1, Round)), columns=list(range(Round)))
         regAAlldf = pd.DataFrame(np.zeros((samplN+1, Round)), columns=list(range(Round)))
-    print("Currently running Sketch"+sketch.name)
+    print("Currently running Sketch "+sketch.name)
     for r in tqdm.tqdm(range(Round)):
         tosaveRunHist = (SaveHist > 0)
-        SketchReachedSupInf = False
         # for s in tqdm.tqdm(range(N)):
-        for s in range(N):
+        while sketch.t < sketch.N:
             t, c, k = sketch.updategen()
             Rec, CList = sketch.update(c, k, t)
             if Rec and (not OnlySaveLast):
                 sketch.record(CList, tosaveRunHist)
-            if sketch.t >= SuperInfty:
-                break
 
         if ToSave:
             sketch.savehist(mode="extracted", tosaveRunHist=tosaveRunHist)
@@ -61,7 +61,7 @@ for sketch in Sketches:
             regAAlldf[r] = utl.myLogunpack(sketch.snapshotHistdf, "regA", samplx)
 
         if OnlySaveLast:
-            RatioAlldf[sketch.name][r] = np.float64(sketch.Mtg/SuperInfty)
+            RatioAlldf[sketch.name][r] = np.float64(sketch.Mtg/sketch.N)
 
         if SaveHist > 0:
             SaveHist -= 1
@@ -74,4 +74,4 @@ for sketch in Sketches:
         regAAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_regA_"+sketch.name+"_"+utl.getTimeString()+".csv")
 
 if OnlySaveLast:
-    RatioAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_LastRatio_1e6_fast"+utl.getTimeString()+".csv")
+    RatioAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_LastRatio_1e5m_"+utl.getTimeString()+".csv")
