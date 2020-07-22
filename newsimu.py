@@ -10,7 +10,7 @@ import sys
 utl.mkdir()
 
 #Curtainbit, Boardbit = 2, 1
-Round = 30000
+Round = 25000
 N = 1e6
 OnlySaveLast = True
 ToSave = False
@@ -31,8 +31,10 @@ samplx = np.power(10, expsamplx)
 
 
 Sketches = [
-            sk.GroupCurtainPCSA(450, 4.0, N, 1.5, 2, pgroupSize=3, pverbos=0)
-            #sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(m, 2.91, N*m, pverbos=1) for m in [71, 141, 283, 566, 1131]
+            sk.DoubleCurtainSketch(300, 3.0, N, 1.5),
+            sk.SecondHighCurtainSketch(300, 4.0, N, 1.5, 3),
+            #sk.GroupCurtainPCSA(450, 4.0, N, 1.5, 2, pgroupSize=3)
+            #sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(400, 2.91, 1e6),
             #sk.CurtainSTUnifOffstSketch(1500, 3.94, N, 1.5),
             #sk.ThrsSketch(750, 2.0, N, 14),
             ]
@@ -74,4 +76,6 @@ for sketch in Sketches:
         regAAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_regA_"+sketch.name+"_"+utl.getTimeString()+".csv")
 
 if OnlySaveLast:
-    RatioAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_LastRatio_1e5m_"+utl.getTimeString()+".csv")
+    RatioAlldf.to_csv("results/"+utl.VersionStr+"/"+utl.RunStr+"_LastRatio_1e6_"+utl.getTimeString()+".csv")
+
+print([nsketch.name for nsketch in Sketches])
