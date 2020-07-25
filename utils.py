@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import math
 import os
 
-VersionStr = "T21"
-RunStr = "V07201430"
+VersionStr = "T22"
+RunStr = "V07242348"
 Infty = 1000
 MaxChange = 1000
 
@@ -50,6 +50,7 @@ def myplot(mSketches, datname, pN, pr, mtitle="", reference=True, msamplerate=1)
 
 
 def myLogunpack(df, datname, sampl):
+    # sorry, but this function is abandoned.
     # df has two columns, t and Mtg
     # inxes give a list of possible t values.
     # if for inxes[m], it is between df[i] and df[i+1], then its value is df[i]
@@ -65,6 +66,25 @@ def myLogunpack(df, datname, sampl):
             dat[inx_sam] = df[datname][inx_df]
             inx_sam += 1
         inx_df += 1
+    return dat
+
+
+def uncoupled_Logunpack(val, time, sampl):
+    # the first vector is the data to be sampled
+    # the second vector is the time
+    # if sampl[j] is between time[i] and time[i+1], dat[j]=val[i]
+    # time[-1] = -infty, time[len]=+infty
+    samLen = len(sampl)
+    valLen = len(time)
+    inx_val = np.int64(0)
+    inx_sam = np.int64(0)
+    dat = np.zeros(samLen, dtype=np.float64)
+    while inx_val < valLen:
+        maxT = np.float64(time[inx_val + 1] if inx_val < valLen - 1 else 1e100)
+        while inx_sam < samLen and sampl[inx_sam] < maxT:
+            dat[inx_sam] = val[inx_val]
+            inx_sam += 1
+        inx_val += 1
     return dat
 
 
@@ -138,3 +158,7 @@ def pdf_count(data, splits=100, p_range=0.5, center=1.0):
 def pdf_base(splits=100, p_range=0.5, center=1.0):
     return (np.arange(splits)/splits-0.5)*(2*p_range)+center
 
+
+def exp_vector(scale=6, split=100, base=10):
+    # returns the vector of [b^0, b^{1/split}, b^{2/split}, ..., b^{scale}, b=base]
+    return np.power(base, np.arange(scale*split+1)/split)

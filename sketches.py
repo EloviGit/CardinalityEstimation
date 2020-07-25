@@ -31,14 +31,14 @@ class Sketch:
         self.runningColStr = [colstr + str(i) for i in range(prunMaxChange) for colstr in self.runningColSingStr]
         self.runningHistNewcontent = np.zeros((self.m, prunhistLenNew), dtype=np.float64)
         self.runningHist_inx = np.zeros(pm, dtype=int)
-        self.runningHistdf = pd.DataFrame()
+        self.runningHistdf = None
 
         self.snapshotLen = psnapshotLenNew + 7
         self.snapshotColStr = ["t", "c", "k", "Mtg", "a", "regA", "invRegA"]
         self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
         self.snapshotHist = np.zeros((SnapMaxChange, self.snapshotLen))
         self.snapshotHist_inx: int = 0
-        self.snapshotHistdf = pd.DataFrame()
+        self.snapshotHistdf = None
 
     def update(self, c, k, t):
         return True, []
@@ -69,14 +69,15 @@ class Sketch:
         self.snapshotHist_inx += 1
 
     def savehist(self, mode="excel", sr=0, tosaveRunHist=True):
-        # 0 for both, 1 for only the snapshot, 2 for none of them.
-        max_run_inx = int(np.max(self.runningHist_inx)/self.runningColSingStrLen)+1
-        self.runningColStr = [colstr + str(i) for i in range(int(len(self.runningColStr)/self.runningColSingStrLen))
-                              for colstr in self.runningColSingStr]
-        if tosaveRunHist:
-            self.runningHistdf = pd.DataFrame(self.runningHist[:, :self.runningColSingStrLen*max_run_inx],
-                                              columns=self.runningColStr[:self.runningColSingStrLen*max_run_inx])
-        self.snapshotHistdf = pd.DataFrame(self.snapshotHist[0:self.snapshotHist_inx, :], columns=self.snapshotColStr)
+        if self.runningHistdf is None:
+            max_run_inx = int(np.max(self.runningHist_inx)/self.runningColSingStrLen)+1
+            self.runningColStr = [colstr + str(i) for i in range(int(len(self.runningColStr)/self.runningColSingStrLen))
+                                  for colstr in self.runningColSingStr]
+            if tosaveRunHist:
+                self.runningHistdf = pd.DataFrame(self.runningHist[:, :self.runningColSingStrLen*max_run_inx],
+                                                  columns=self.runningColStr[:self.runningColSingStrLen*max_run_inx])
+        if self.snapshotHistdf is None:
+            self.snapshotHistdf = pd.DataFrame(self.snapshotHist[0:self.snapshotHist_inx, :], columns=self.snapshotColStr)
         if mode == "excel":
             sWriter = pd.ExcelWriter("TTLHist/"+VersionStr+"/"+self.name+"_"+getTimeString()+".xlsx")
             self.runningHistdf.to_excel(sWriter, "running")
@@ -85,9 +86,8 @@ class Sketch:
         elif mode == "csv":
             self.runningHistdf.to_csv("TTLHist/"+VersionStr+"/"+self.name+"_running_"+getTimeString()+".csv")
             self.snapshotHistdf.to_csv("TTLHist/"+VersionStr+"/"+self.name+"_snapshots_"+getTimeString()+".csv")
-        elif mode == "short":
-            self.snapshotHistdf[["t", "Mtg", "invRegA"]].to_csv("TTLHist/"+VersionStr+"/"+RunStr+"_"
-                                                                +"shortHist_"+self.name+"("+str(sr)+").csv")
+        # elif mode == "short":
+        #     self.snapshotHistdf[["t", "Mtg", "invRegA"]].to_csv("TTLHist/"+VersionStr+"/"+RunStr+"_"+"shortHist_"+self.name+"("+str(sr)+").csv")
         elif mode == "extracted":
             pass
 
@@ -1097,9 +1097,11 @@ class SecondHighCurtainSketch(Sketch):
     # this sketch ensures the difference of adjacent counters <= pDiffbd.
     def __init__(self, pm, pq, pN, pDiffbd, pSecondbd, pverbos=0, pcolor='orange', pname="SecondHighCtn"):
         mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(pSecondbd)])
-        super(SecondHighCurtainSketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2)
+        super(SecondHighCurtainSketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2, psnapshotLenNew=1)
         self.diffbd = pDiffbd
         self.runningColSingStr += ["first", "tension"]
+        self.snapshotColStr += ["diffSum"]
+        self.diffSum = 0
         ceofx = np.arange(pm)
         self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
         self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
@@ -1132,8 +1134,9 @@ class SecondHighCurtainSketch(Sketch):
                     break
             fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates-self.offset))*(1-1/self.q)
             self.updateA(np.sum(np.power(self.q, -self.states-self.offset))-np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
             if self.verbos != 0:
-                self.updateSnapshot(t, c, k, [])
+                self.updateSnapshot(t, c, k, [self.diffSum])
                 self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
             else:
                 self.t = t
@@ -1144,8 +1147,9 @@ class SecondHighCurtainSketch(Sketch):
             self.firststates[c] = k
             fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
             self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
             if self.verbos != 0:
-                self.updateSnapshot(t, c, k, [])
+                self.updateSnapshot(t, c, k, [self.diffSum])
                 self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
             else:
                 self.t = t
@@ -1170,8 +1174,9 @@ class SecondHighCurtainSketch(Sketch):
                     break
             fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
             self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
             if self.verbos != 0:
-                self.updateSnapshot(t, c, k, [])
+                self.updateSnapshot(t, c, k, [self.diffSum])
                 self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
             else:
                 self.t = t
@@ -1300,6 +1305,226 @@ class DoubleCurtainSketch(Sketch):
             k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
         return np.float64(self.t+deltat), c, k
 
+
+class LowestZeroCurtainSketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    def __init__(self, pm, pq, pN, pDiffbd, pSecondbd, pverbos=0, pcolor='orange', pname="LowestZeroCtn"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(pSecondbd)])
+        super(LowestZeroCurtainSketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2)
+        self.diffbd = pDiffbd
+        self.runningColSingStr += ["ZeroPos"]
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
+        self.secondbd = np.int64(pSecondbd)
+        self.zeroposes = np.zeros(pm, dtype=np.int64) - 1 # -1 if no such zero; or the position of the lowest zero
+        self.verbos = pverbos
+        self.updateA(np.sum(np.power(self.q, -self.states - self.offset)))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            self.states[c] = max(k - self.secondbd - self.tension[c], self.firststates[c])
+            self.firststates[c] = k
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] < self.states[c] + self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c-i] = 0
+                    self.states[c-i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.firststates[c-i] = max(self.states[c-i], self.firststates[c-i])
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < self.states[c]+ self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c+i] = 0
+                    self.states[c+i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c+i]
+                    self.firststates[c+i] = max(self.firststates[c+i], self.states[c+i])
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates-self.offset))*(1-1/self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset))-np.sum(fsoverlap))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k == self.zeroposes[c] and self.zeroposes[c] != -1:
+            cList = [c]
+            self.zeroposes[c] = -1
+            self.updateMtg()
+            self.updateA(self.a - np.power(1/self.q, self.zeroposes[c]+self.offset[c]-1)*(1-1/self.q))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.zeroposes
+            else:
+                self.t = t
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(LowestZeroCurtainSketch, self).refresh()
+        self.firststates = np.zeros(self.firststates.shape, dtype=np.int64)
+        self.tension = np.zeros(self.tension.shape, dtype=np.int64)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a/self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1/remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, 1 - self.firststates - self.offset))*(1 - 1 / self.q)
+        probList = np.power(self.q, -self.states - self.offset) - fsoverlap
+        c = np.random.choice(np.arange(self.m), p=probList/np.sum(probList))
+        lower = probList[c]-np.power(1/self.q, self.firststates[c]+self.offset[c]) if self.firststates[c] not in (self.states[c], self.states[c]+1) else 0
+        probList_c = np.array([lower, np.power(1/self.q, self.firststates[c]+self.offset[c])], dtype=np.float64)
+        k_ = np.random.choice([0, 1], p=probList_c/(np.sum(probList_c)))
+        if k_ == 1:
+            k = self.firststates[c] + np.random.geometric(1-1/self.q)
+        else:
+            assert self.states[c] <= self.firststates[c] - 2
+            secondRange = np.arange(self.states[c] + 1, self.firststates[c])
+            prob_secondrange = np.power(self.q, -secondRange)
+            k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
+        return np.float64(self.t+deltat), c, k
+
+
+class SecondHighCurtain_distributionResearch_Sketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    # this class researches the distribution of the distribution of the differences
+    def __init__(self, pm, pq, pN, pDiffbd, pSecondbd, pverbos=0, pcolor='orange', pname="SecondHighCtn"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd), str(pSecondbd)])
+        super(SecondHighCurtain_distributionResearch_Sketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2, psnapshotLenNew=3+pSecondbd*2)
+        self.diffbd = pDiffbd
+        self.runningColSingStr += ["first", "tension"]
+        self.snapshotColStr += ["diffSum"] + [["ten", "not"][tenstr]+str(i+tenstr) for tenstr in range(2) for i in range(pSecondbd+1)]
+        self.diffSum = 0
+        #self.maxBitUsed = 0
+        self.diffcount = np.zeros(2*pSecondbd+2, dtype=np.int64)
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
+        self.secondbd = np.int64(pSecondbd)
+        self.firststates = np.zeros(pm, dtype=np.int64)
+        self.tension = np.zeros(pm, dtype=np.int64) # 0 is in tension, 1 is not in tension
+        # when tension=0, first-second in [0, scbd-1], when tension=1, first-second in [1, scbd]
+        self.verbos = pverbos
+        self.updateA(np.sum(np.power(self.q, -self.states - self.offset)))
+
+    def update(self, c, k, t):
+        if (k > self.firststates[c] > self.states[c]) or (self.firststates[c] == self.states[c] and k > self.states[c] + self.secondbd + self.tension[c]):
+            cList = [c]
+            self.updateMtg()
+            self.tension[c] = 1
+            self.states[c] = max(k - self.secondbd - self.tension[c], self.firststates[c])
+            self.firststates[c] = k
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] < self.states[c] + self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c-i] = 0
+                    self.states[c-i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.firststates[c-i] = max(self.states[c-i], self.firststates[c-i])
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < self.states[c]+ self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c+i] = 0
+                    self.states[c+i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c+i]
+                    self.firststates[c+i] = max(self.firststates[c+i], self.states[c+i])
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates-self.offset))*(1-1/self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset))-np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
+            for i in range(self.secondbd+1):
+                self.diffcount[i] = np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0))
+                self.diffcount[i+self.secondbd+1] = np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0))
+                # self.maxdiffcount[i] = max(np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0)), self.maxdiffcount[i])
+                # self.maxdiffcount[i+self.secondbd+1] = max(np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0)), self.maxdiffcount[i+self.secondbd+1])
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.diffcount)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif self.states[c] < k <= self.states[c] + self.secondbd + self.tension[c] and self.firststates[c] == self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            self.firststates[c] = k
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
+            for i in range(self.secondbd+1):
+                self.diffcount[i] = np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0))
+                self.diffcount[i+self.secondbd+1] = np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0))
+                # self.maxdiffcount[i] = max(np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0)), self.maxdiffcount[i])
+                # self.maxdiffcount[i+self.secondbd+1] = max(np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0)), self.maxdiffcount[i+self.secondbd+1])
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.diffcount)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif self.states[c] < k < self.firststates[c]:
+            cList = [c]
+            self.states[c] = k
+            self.tension[c] = 1
+            self.updateMtg()
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] < self.states[c] + self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c-i] = 0
+                    self.states[c-i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.firststates[c-i] = max(self.states[c-i], self.firststates[c-i])
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] < self.states[c]+ self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c+i] = 0
+                    self.states[c+i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c+i]
+                    self.firststates[c+i] = max(self.firststates[c+i], self.states[c+i])
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap))
+            self.diffSum = np.sum(self.firststates - self.states)
+            for i in range(self.secondbd+1):
+                self.diffcount[i] = np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0))
+                self.diffcount[i+self.secondbd+1] = np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0))
+                # self.maxdiffcount[i] = max(np.dot(1 - self.tension, np.where(self.firststates - self.states == i, 1, 0)), self.maxdiffcount[i])
+                # self.maxdiffcount[i+self.secondbd+1] = max(np.dot(self.tension, np.where(self.firststates - self.states == i+1, 1, 0)), self.maxdiffcount[i+self.secondbd+1])
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.diffcount)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(SecondHighCurtain_distributionResearch_Sketch, self).refresh()
+        self.firststates = np.zeros(self.firststates.shape, dtype=np.int64)
+        self.tension = np.zeros(self.tension.shape, dtype=np.int64)
+        self.diffSum = 0
+        self.diffcount = np.zeros(self.diffcount.shape, dtype=np.int64)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a/self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1/remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, 1 - self.firststates - self.offset))*(1 - 1 / self.q)
+        probList = np.power(self.q, -self.states - self.offset) - fsoverlap
+        c = np.random.choice(np.arange(self.m), p=probList/np.sum(probList))
+        lower = probList[c]-np.power(1/self.q, self.firststates[c]+self.offset[c]) if self.firststates[c] not in (self.states[c], self.states[c]+1) else 0
+        probList_c = np.array([lower, np.power(1/self.q, self.firststates[c]+self.offset[c])], dtype=np.float64)
+        k_ = np.random.choice([0, 1], p=probList_c/(np.sum(probList_c)))
+        if k_ == 1:
+            k = self.firststates[c] + np.random.geometric(1-1/self.q)
+        else:
+            assert self.states[c] <= self.firststates[c] - 2
+            secondRange = np.arange(self.states[c] + 1, self.firststates[c])
+            prob_secondrange = np.power(self.q, -secondRange)
+            k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
+        return np.float64(self.t+deltat), c, k
 
 
 # def updategen(usketch:Sketch):
