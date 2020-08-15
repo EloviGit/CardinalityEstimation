@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import math
 import os
 
-VersionStr = "T22"
-RunStr = "V07242348"
+VersionStr = "T26"
+RunStr = "V08151554"
 Infty = 1000
 MaxChange = 1000
 
@@ -162,3 +162,16 @@ def pdf_base(splits=100, p_range=0.5, center=1.0):
 def exp_vector(scale=6, split=100, base=10):
     # returns the vector of [b^0, b^{1/split}, b^{2/split}, ..., b^{scale}, b=base]
     return np.power(base, np.arange(scale*split+1)/split)
+
+
+def truncate(x, mantbit=8, expbit=6, base=2.0):
+    assert x >= 0
+    if x == 0:
+        return np.float64(0)
+    digit = np.int(np.log(x)/np.log(base))
+    assert 0 <= digit < np.power(base, expbit)
+    fracx = x / np.power(base, digit, dtype=np.float64)
+    truncfracx = np.round(fracx * np.power(base, mantbit))
+    truncx = np.float64(truncfracx*np.power(base, digit-mantbit, dtype=np.float64))
+    return truncx
+

@@ -10,58 +10,49 @@ import sys
 
 utl.mkdir()
 
-Round = 30000
-N = 1e6
-scale = 6
-SaveLast = True
-SaveLog = False
+Round = 10000
 SaveHist = False
 # MaxBit = 1200
 
-LogScaleSampleContents = ["Mtg"] if SaveLog else []
-OnlyLastSampleContents = [["ten", "not"][tenstr]+str(i+tenstr) for tenstr in range(2) for i in range(4)] if SaveLast else []
-
-Sketches = [
-            #sk.LLSketch(200, 2.0, N),
-            #sk.DoubleCurtainSketch(300, 3.0, N, 1.5),
-            sk.SecondHighCurtain_distributionResearch_Sketch(300, 3.0, N, 1.5, 3, pverbos=1),
-            #sk.GroupCurtainPCSA(450, 4.0, N, 1.5, 2, pgroupSize=3)
-            #sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(400, 2.91, 1e6),
-            #sk.CurtainSTUnifOffstSketch(1500, 3.94, N, 1.5),
-            #sk.ThrsSketch(750, 2.0, N, 14),
-            ]
-
+#sketch1 = sk.CurtainSTUnifOffstSketch(100, 3.94, np.power(2, 70, dtype=np.float64), 1.5)
+#sketch1 = sk.Infty_ThrsSketch(40, 2.0, np.power(2, 70, dtype=np.float64), 30)
+sketch1 = sk.SuperCompression134Sketch(1000000, pverbos=0)
+#sketch1 = sk.AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch(100, 2.91, np.power(2, 50, dtype=np.float64), pverbos=0)
+Sketches = [sketch1]
 
 names = [nsketch.name for nsketch in Sketches]
-onlyLastSampler = spl.OnlyLastSampler(names, OnlyLastSampleContents, "differences", Round)
+onlyLastSampler1 = spl.OnlyLastSampler([sketch1.name], ["Mtg", "truncMtg"], "SupComp134", Round)
+#onlyLastSampler2 = spl.OnlyLastSampler(['AdaLazyCtnPCSA-400-2.91-1.5-1', 'CtnSTUnifOffsLL-600-3.94-1.5'], ["Mtg"], "CtnPCSA_and_LL", Round)
+#failureSampler = spl.FailureSampler(names, "failed", "RawPCSA")
+#LogScaleSampler = [spl.LogScaleSampler(sketch.name, "Mtg", Round, scale=70, split=10, base=2) for sketch in Sketches]
+Samplers = [onlyLastSampler1]
 for sketch in Sketches:
-    LogScaleSamplers = [spl.LogScaleSampler(sketch.name, datname, Round, scale=scale) for datname in LogScaleSampleContents]
     print("Currently running Sketch "+sketch.name)
     for r in tqdm.tqdm(range(Round)):
         tosaveRunHist = (SaveHist > 0)
-        # for s in tqdm.tqdm(range(N)):
+        # t, c, k = sketch.updategen()
         while sketch.t < sketch.N:
             t, c, k = sketch.updategen()
             Rec, CList = sketch.update(c, k, t)
             if Rec:
                 sketch.record(CList, tosaveRunHist)
+        #sketch.last()
 
-        for sampler in LogScaleSamplers:
+        for sampler in Samplers:
             sampler.sample(sketch, r)
-
-        onlyLastSampler.sample(sketch, r)
 
         if SaveHist and r == 0:
             sketch.savehist(mode="csv")
 
         sketch.refresh()
 
-    for sampler in LogScaleSamplers:
-        sampler.save()
+    for sampler in Samplers:
+        sampler.save(True)
 
-onlyLastSampler.save()
+for sampler in Samplers:
+    sampler.save()
+
 print(names)
-print(onlyLastSampler.sknames)
 
 # abandoned parameters.
 # BitperCounter = Curtainbit + Boardbit

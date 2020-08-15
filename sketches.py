@@ -8,6 +8,7 @@ scalingfactors = [1, 1000, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27, 1e30]
 CurtainUpbd = 100
 SnapMaxChange = 100000
 PCSAUpbd = 40
+HLLUpbd = 64
 
 
 class Sketch:
@@ -115,6 +116,7 @@ class Sketch:
             prob = np.power(1 / self.q, self.states + self.offset)
         else:
             prob = np.power(1 / self.q, self.states)
+        assert abs(np.sum(prob) - self.a)<1e-6
         condprob = prob / np.sum(prob)
         c = np.random.choice(np.arange(self.m), p=condprob)
         # prob of at least k
@@ -125,6 +127,9 @@ class Sketch:
         k = self.states[c] + np.random.geometric(1 - 1 / self.q)
         newt = np.float64(self.t + deltat)
         return newt, c, k
+
+    def last(self):
+        pass
 
 
 class LLSketch(Sketch):
@@ -1525,6 +1530,455 @@ class SecondHighCurtain_distributionResearch_Sketch(Sketch):
             prob_secondrange = np.power(self.q, -secondRange)
             k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
         return np.float64(self.t+deltat), c, k
+
+
+class SecondHighCurtainUnarySketch(Sketch):
+    # this sketch ensures the difference of adjacent counters <= pDiffbd.
+    # this class researches the distribution of the distribution of the differences
+    def __init__(self, pm, pq, pN, pDiffbd, pverbos=0, pcolor='orange', pname="SecondHighCtnUnary"):
+        mpname = "-".join([pname, str(pm), str(pq), str(pDiffbd)])
+        super(SecondHighCurtainUnarySketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=2, psnapshotLenNew=3)
+        self.diffbd = pDiffbd
+        self.runningColSingStr += ["first", "tension"]
+        self.snapshotColStr += ["diffSum", "BitUsed", "maxBitUsed"]
+        self.diffSum = 0
+        self.CurtainBit = (np.log2(self.diffbd+0.5)+1)*self.m
+        self.BitUsed = self.CurtainBit
+        self.maxBitUsed = self.CurtainBit
+        ceofx = np.arange(pm)
+        self.sawtoffset = np.where(ceofx%2==0, 0.5, 0)
+        self.offset = np.where(ceofx%2==0, 0.5, 0) + np.array(np.arange(pm), dtype=np.float64)/(2*pm)
+        self.states -= 1 # the second states are at first all -1
+        self.firststates = np.zeros(pm, dtype=np.int64)
+        self.tension = np.ones(pm, dtype=np.int64) # 0 is in tension, 1 is not in tension
+        # when tension=0, first-second can be 0, when tension=1, first-second is at least 1
+        self.verbos = pverbos
+        self.revise = np.sum(np.where(self.states == -1, np.power(self.q, 1-self.offset)-np.power(self.q, -self.offset), 0))
+        self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - self.revise)
+
+    def update(self, c, k, t):
+        if k > self.firststates[c] > self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            self.tension[c] = 1
+            self.states[c] = self.firststates[c]
+            self.firststates[c] = k
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] <= self.states[c] + self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c-i] = 0
+                    self.states[c-i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.firststates[c-i] = max(self.states[c-i], self.firststates[c-i])
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] <= self.states[c]+ self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c+i] = 0
+                    self.states[c+i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c+i]
+                    self.firststates[c+i] = max(self.states[c+i], self.firststates[c+i])
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            if self.revise != 0:
+                self.revise = np.sum(np.where(self.states == -1, np.power(self.q, 1 - self.offset) - np.power(self.q, -self.offset), 0))
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates-self.offset))*(1-1/self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states-self.offset))-np.sum(fsoverlap) - self.revise)
+            self.diffSum = np.sum(self.firststates - self.states)
+            self.BitUsed = self.diffSum + self.m - np.sum(self.tension) + self.CurtainBit
+            self.maxBitUsed = max(self.maxBitUsed, self.BitUsed)
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.BitUsed, self.maxBitUsed)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k > self.states[c] and self.firststates[c] == self.states[c]:
+            cList = [c]
+            self.updateMtg()
+            self.firststates[c] = k
+            if self.revise != 0:
+                self.revise = np.sum(np.where(self.states == -1, np.power(self.q, 1 - self.offset) - np.power(self.q, -self.offset), 0))
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap) - self.revise)
+            self.diffSum = np.sum(self.firststates - self.states)
+            self.BitUsed = self.diffSum + self.m - np.sum(self.tension) + self.CurtainBit
+            self.maxBitUsed = max(self.maxBitUsed, self.BitUsed)
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.BitUsed, self.maxBitUsed)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif self.states[c] < k < self.firststates[c]:
+            cList = [c]
+            self.states[c] = k
+            self.tension[c] = 1
+            self.updateMtg()
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c-i] + self.sawtoffset[c-i] <= self.states[c] + self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c-i] = 0
+                    self.states[c-i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c-i]
+                    self.firststates[c-i] = max(self.states[c-i], self.firststates[c-i])
+                    cList.append(c-i)
+                if c + i < self.m and self.states[c+i] + self.sawtoffset[c+i] <= self.states[c]+ self.sawtoffset[c] - i * self.diffbd:
+                    self.tension[c+i] = 0
+                    self.states[c+i] = self.states[c] - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c+i]
+                    self.firststates[c+i] = max(self.states[c+i], self.firststates[c+i])
+                    cList.append(c+i)
+                if k - i * self.diffbd < 0:
+                    break
+            if self.revise != 0:
+                self.revise = np.sum(np.where(self.states == -1, np.power(self.q, 1 - self.offset) - np.power(self.q, -self.offset), 0))
+            fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, -self.firststates - self.offset)) * (1 - 1 / self.q)
+            self.updateA(np.sum(np.power(self.q, -self.states - self.offset)) - np.sum(fsoverlap) - self.revise)
+            self.diffSum = np.sum(self.firststates - self.states)
+            self.BitUsed = self.diffSum + self.m - np.sum(self.tension) + self.CurtainBit
+            self.maxBitUsed = max(self.maxBitUsed, self.BitUsed)
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.hstack((self.diffSum, self.BitUsed, self.maxBitUsed)))
+                self.runningHistNewcontent = np.vstack((self.firststates, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(SecondHighCurtainUnarySketch, self).refresh()
+        self.firststates = np.zeros(self.firststates.shape, dtype=np.int64)
+        self.tension = np.zeros(self.tension.shape, dtype=np.int64)
+        self.diffSum = 0
+        self.BitUsed = self.CurtainBit
+        self.maxBitUsed =  self.CurtainBit
+
+    def updategen(self):
+        remainingArea = np.float64(self.a/self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1/remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+        fsoverlap = np.where(self.states == self.firststates, 0, np.power(self.q, 1 - self.firststates - self.offset))*(1 - 1 / self.q)
+        probList = np.power(self.q, -self.states - self.offset) - fsoverlap
+        c = np.random.choice(np.arange(self.m), p=probList/np.sum(probList))
+        lower = probList[c]-np.power(1/self.q, self.firststates[c]+self.offset[c]) if self.firststates[c] not in (self.states[c], self.states[c]+1) else 0
+        probList_c = np.array([lower, np.power(1/self.q, self.firststates[c]+self.offset[c])], dtype=np.float64)
+        k_ = np.random.choice([0, 1], p=probList_c/(np.sum(probList_c)))
+        if k_ == 1:
+            k = self.firststates[c] + np.random.geometric(1-1/self.q)
+        else:
+            assert self.states[c] <= self.firststates[c] - 2
+            secondRange = np.arange(self.states[c] + 1, self.firststates[c])
+            prob_secondrange = np.power(self.q, -secondRange)
+            k = np.random.choice(secondRange, p=prob_secondrange/(np.sum(prob_secondrange)))
+        return np.float64(self.t+deltat), c, k
+
+
+class UnifOffsPCSASketch(Sketch):
+    def __init__(self, pm, pq, pN, pverbos=0, pCR=12, pcolor='orange', pname="UnifOffsPCSA"):
+        mpname = "-".join([pname, str(pm), str(pq)])
+        self.newcontentRange = pCR
+        super(UnifOffsPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=pCR)
+        self.bitmap = np.ones((pm, PCSAUpbd)) # 0 for seen, 1 for not seen, remaining area
+        # position i: (1-1/q)(1/q)^i; e.g. 0: 1-1/q; 1: 1/q-1/q^2
+        self.verbos = pverbos
+        ceofx = np.arange(pm)
+        self.offset = np.array(np.arange(pm), dtype=np.float64) / pm
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.runningColSingStr += [str(i) + "-th bit" for i in range(pCR)]
+        self.updateA(self.a)
+        self.probbitmap = np.multiply(np.power(1/self.q, np.zeros(self.bitmap.shape)+self.offset.reshape(self.m, 1)), np.power(1/self.q, np.arange(PCSAUpbd))*(1-1/self.q))
+        self.abovePCSAUpbd_aList = np.power(1/self.q, PCSAUpbd + self.offset)
+        self.abovePCSAUpbd_a = np.sum(self.abovePCSAUpbd_aList)
+
+    def update(self, c, k, t):
+        if self.bitmap[c, k] == 1:
+            cList = [c]
+            self.updateMtg()
+            self.states[c] = max(self.states[c], k)
+            self.bitmap[c, k] = 0
+            self.updateA(self.a - self.probbitmap[c, k])
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [])
+                self.runningHistNewcontent = self.bitmap[:, 0:self.newcontentRange]
+            else:
+                self.t = t
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(UnifOffsPCSASketch, self).refresh()
+        self.bitmap = np.ones(self.bitmap.shape)
+        self.a = np.sum(np.power(self.q, -self.offset))
+        self.updateA(self.a)
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+
+        probBitmap = np.multiply(self.bitmap, self.probbitmap)
+        prob_c = np.sum(probBitmap, axis=1) + self.abovePCSAUpbd_aList
+        c = np.random.choice(np.arange(self.m), p=prob_c / np.sum(prob_c))
+        probList_ = np.hstack((probBitmap[c], self.abovePCSAUpbd_aList[c]))
+        k = np.random.choice(np.arange(PCSAUpbd+1), p=probList_/(np.sum(probList_)))
+        if k == PCSAUpbd:
+            # something not really gonna happen
+            k += np.random.geometric(1 - 1 / self.q)
+        return np.float64(self.t + deltat), c, k
+
+
+class RawHyperLogLogSketch(Sketch):
+    def __init__(self, pm, pq, pN, pthrs=15, pverbos=0, pcolor="red", pname="RawHLL"):
+        mpname = "-".join([pname, str(pm), str(pq)])
+        super(RawHyperLogLogSketch, self).__init__(pm, pq, pN, pcolor, mpname, psnapshotLenNew=2)
+        self.snapshotColStr += ["Estimator", "Range"]
+        self.alpha = 0.7213 / (1 + 1.079 / self.m)
+        self.verbos = pverbos
+        self.range = np.max(self.states) - np.min(self.states)
+        self.thrs = pthrs
+        self.failed = 0 if self.range <= self.thrs else 1 # 1 if failed, 0 if not.
+        self.estimator = self.alpha * self.m * self.invrega if self.failed == 0 else -1
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            self.updateA(self.a + np.power(self.q, -k) - np.power(self.q, -self.states[c]))
+            self.states[c] = k
+            self.range = np.max(self.states) - np.min(self.states)
+            self.failed = 0 if self.range <= self.thrs else 1
+            self.estimator = self.alpha * self.m * self.invrega if self.failed == 0 else -1
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, np.array([self.estimator, self.range]))
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+
+class RawPCSASketch(Sketch):
+    def __init__(self, pm, pq, pN, pPCSAUpbd=20, pverbos=0, pcolor='orange', pname="RawPCSA"):
+        mpname = "-".join([pname, str(pm), str(pq)])
+        self.newcontentRange = pPCSAUpbd
+        self.PCSAUpbd = pPCSAUpbd
+        super(RawPCSASketch, self).__init__(pm, pq, pN, pcolor, mpname, prunhistLenNew=pPCSAUpbd, psnapshotLenNew=1)
+        # the states now is the position of the highest consecutive 1
+        self.bitmap = np.ones((pm, self.PCSAUpbd)) # 0 for seen, 1 for not seen, remaining area
+        # position i: (1-1/q)(1/q)^i; e.g. 0: 1-1/q; 1: 1/q-1/q^2
+        self.verbos = pverbos
+        #ceofx = np.arange(pm)
+        #self.offset = np.array(np.arange(pm), dtype=np.float64) / pm
+        self.offset = np.zeros(pm) # turn off this function first
+        self.runningColSingStr += [str(i) + "-th bit" for i in range(pPCSAUpbd)]
+        self.snapshotColStr += ["Estimator"]
+        self.updateA(np.sum(np.power(self.q, -self.offset)))
+        self.failed = 0 # 1 if failed
+        self.varphi = 0.77351
+        self.estimator = self.m / self.varphi * np.power(self.q, np.sum(self.states)/self.m)
+        self.probbitmap = np.multiply(np.power(1/self.q, np.zeros(self.bitmap.shape)+self.offset.reshape(self.m, 1)), np.power(1/self.q, np.arange(self.PCSAUpbd))*(1-1/self.q))
+        self.abovePCSAUpbd_aList = np.power(1/self.q, self.PCSAUpbd + self.offset)
+        self.abovePCSAUpbd_a = np.sum(self.abovePCSAUpbd_aList)
+
+    def update(self, c, k, t):
+        if k >= self.PCSAUpbd:
+            self.failed = 1
+            self.estimator = -1
+            if self.verbos != 0:
+                self.updateSnapshot(self.N+1, c, k, self.estimator)
+                self.runningHistNewcontent = self.bitmap[:, 0:self.newcontentRange]
+            else:
+                self.t = self.N+1
+            return True, [c]
+        if self.failed == 0 and self.bitmap[c, k] == 1:
+            cList = [c]
+            self.bitmap[c, k] = 0
+            for i in range(self.states[c], self.PCSAUpbd):
+                if self.bitmap[c, i] == 1:
+                    self.states[c] = i
+                    break
+            else:
+                # really unlikely
+                self.states[c] = self.PCSAUpbd
+            self.updateA(self.a - self.probbitmap[c, k])
+            self.estimator = self.m / self.varphi * np.power(self.q, np.sum(self.states) / self.m)
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, self.estimator)
+                self.runningHistNewcontent = self.bitmap[:, 0:self.newcontentRange]
+            else:
+                self.t = t
+            return True, cList
+        else:
+            return False, []
+
+    def refresh(self):
+        super(RawPCSASketch, self).refresh()
+        self.bitmap = np.ones(self.bitmap.shape)
+        self.updateA(np.sum(np.power(self.q, -self.offset)))
+        self.failed = 0
+
+    def updategen(self):
+        remainingArea = np.float64(self.a / self.m)
+        if remainingArea < 1e-8:
+            deltat = np.float64(np.random.exponential(1 / remainingArea))
+        else:
+            deltat = np.float64(np.random.geometric(remainingArea))
+
+        probBitmap = np.multiply(self.bitmap, self.probbitmap)
+        prob_c = np.sum(probBitmap, axis=1) + self.abovePCSAUpbd_aList
+        c = np.random.choice(np.arange(self.m), p=prob_c / np.sum(prob_c))
+        probList_ = np.hstack((probBitmap[c], self.abovePCSAUpbd_aList[c]))
+        k = np.random.choice(np.arange(self.PCSAUpbd+1), p=probList_/(np.sum(probList_)))
+        if k == PCSAUpbd:
+            # something not really gonna happen
+            # but if really happened, then failed
+            k += np.random.geometric(1 - 1 / self.q)
+        return np.float64(self.t + deltat), c, k
+
+
+class betaLLSketch(Sketch):
+    def __init__(self, pm, pq, pN, pcolor="red", pname="betaLL", pverbos=0):
+        mpname = "-".join([pname, str(pm), str(pq)])
+        super(betaLLSketch, self).__init__(pm, pq, pN, pcolor, mpname, psnapshotLenNew=2)
+        self.snapshotColStr+= ["invregaErr", "nextExpectedInvrega"]
+        self.HLLUpbd = HLLUpbd
+        self.nextExpectedInvrega = np.sum([(self.q-1)/((self.m-1)*np.power(self.q, i)+1) for i in range(1, self.HLLUpbd)]) * self.m
+        self.invregaErr = 0
+        self.verbos = pverbos
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            self.updateMtg()
+            self.updateA(self.a + np.power(self.q, -k) - np.power(self.q, -self.states[c]))
+            self.invregaErr = self.invrega - self.nextExpectedInvrega
+            self.states[c] = k
+            self.nextExpectedInvrega = np.sum([(self.q-1)/((self.m*self.rega*np.power(self.q, self.states[d])-1)*np.power(self.q, i)+1) for i in range(1, self.HLLUpbd) for d in range(self.m)]) * self.invrega
+            if self.verbos == 0:
+                self.t = t
+            else:
+                self.updateSnapshot(t, c, k, [self.invregaErr, self.nextExpectedInvrega])
+            return True, [c]
+        else:
+            return False, []
+
+
+class betaLLSketch_last(Sketch):
+    def __init__(self, pm, pq, pN, pcolor="red", pname="betaLL", pverbos=0):
+        mpname = "-".join([pname, str(pm), str(pq)])
+        super(betaLLSketch_last, self).__init__(pm, pq, pN, pcolor, mpname, psnapshotLenNew=2)
+        self.snapshotColStr+= ["invregaErr", "ExpectedInvrega"]
+        self.HLLUpbd = HLLUpbd
+        self.laststates = self.states.copy()
+        self.lasta = self.a
+        self.ExpectedInvrega = 1
+        self.invregaErr = 0
+        self.verbos = pverbos
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            self.laststates = self.states.copy()
+            self.lasta = self.a
+            self.updateMtg()
+            self.updateA(self.a + np.power(self.q, -k) - np.power(self.q, -self.states[c]))
+            self.states[c] = k
+            if self.verbos != 0:
+                self.ExpectedInvrega = np.sum([(self.q-1)/((self.lasta*np.power(self.q, self.laststates[d], dtype=np.float64)-1)*np.power(self.q, i, dtype=np.float64)+1) for i in range(1, self.HLLUpbd) for d in range(self.m)], dtype=np.float64)/self.lasta * self.m
+                self.invregaErr = self.invrega - self.ExpectedInvrega
+            if self.verbos == 0:
+                self.t = t
+            else:
+                self.updateSnapshot(t, c, k, [self.invregaErr, self.ExpectedInvrega])
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(betaLLSketch_last, self).refresh()
+
+    def last(self):
+        self.ExpectedInvrega = np.sum([(self.q - 1) / ((self.lasta * np.power(self.q, self.laststates[d], dtype=np.float64) - 1)
+                                                       * np.power(self.q, i, dtype=np.float64) + 1)
+                                       for i in range(1, self.HLLUpbd) for d in range(self.m)], dtype=np.float64) / self.lasta * self.m
+        self.invregaErr = self.invrega - self.ExpectedInvrega
+
+
+class Infty_ThrsSketch(ThrsSketch):
+    def __init__(self, pm, pq, pN, pUpbd, pcolor='green', pname="Thrs"):
+        super(Infty_ThrsSketch, self).__init__(pm, pq, pN, pUpbd, pcolor, pname)
+
+    def updategen(self):
+        if self.rega == 0:
+            return 2*self.N, 0, 1
+        else:
+            return super(Infty_ThrsSketch, self).updategen()
+
+
+class SuperCompression134Sketch(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch):
+    def __init__(self, pN, mantbit=8, expbit=6, pverbos=0, pcolor='orange', pname="SupComp134"):
+        pm = 39
+        pq = 2.91
+        super(SuperCompression134Sketch, self).__init__(pm, pq, pN, pverbos, pcolor, pname)
+        self.mantbit = mantbit
+        self.expbit = expbit
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
+        self.snapshotLen += 1
+        self.snapshotColStr += ["truncMtg"]
+        self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
+        self.snapshotHist = np.zeros((SnapMaxChange, self.snapshotLen))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = []
+            if self.verbos != 0:
+                cList.append(c)
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            if k == self.states[c] + 1:
+                if self.tension[c] == 1:
+                    self.bitmap[c] = 0
+            else:
+                self.bitmap[c] = 1
+            self.tension[c] = 1
+            self.states[c] = k
+
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c - i)
+                    self.bitmap[c - i] = 1
+                    self.tension[c - i] = 0
+                if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c + i)
+                    self.bitmap[c + i] = 1
+                    self.tension[c + i] = 0
+                if k - i * self.diffbd < 0:
+                    break
+            belowProbSum = np.dot(np.power(1/self.q, self.states + self.offset - self.tension - 1), self.bitmap) * (1 - 1/self.q)
+            self.updateA(belowProbSum + np.sum(np.power(1/self.q, self.states + self.offset)))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k == self.states[c] - self.tension[c] and self.bitmap[c] == 1:
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            self.bitmap[c] = 0
+            self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k + 1 - self.offset[c])))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(SuperCompression134Sketch, self).refresh()
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
 
 
 # def updategen(usketch:Sketch):
