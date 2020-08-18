@@ -79,9 +79,13 @@ def uncoupled_Logunpack(val, time, sampl):
     inx_val = np.int64(0)
     inx_sam = np.int64(0)
     dat = np.zeros(samLen, dtype=np.float64)
+    while inx_sam < samLen and sampl[inx_sam] < np.float64(time[0]):
+        dat[inx_sam] = 0
+        inx_sam += 1
     while inx_val < valLen:
+        minT = np.float64(time[inx_val])
         maxT = np.float64(time[inx_val + 1] if inx_val < valLen - 1 else 1e100)
-        while inx_sam < samLen and sampl[inx_sam] < maxT:
+        while inx_sam < samLen and minT <= sampl[inx_sam] < maxT:
             dat[inx_sam] = val[inx_val]
             inx_sam += 1
         inx_val += 1

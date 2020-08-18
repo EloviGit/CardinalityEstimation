@@ -48,3 +48,20 @@ because for those are not in A, you do not care about its actual value; instead,
 count it as a new element.
 
 
+### new update: simulation by only the state changes.
+For a sketch object, we initialize with the target rounds N. Given that the current state change probability
+*a*, we only need to simulate a geometric random variable of *1-a*, or equivalently, an exponential
+variable of *1/a*, and accumulate that to *t*, the number of insertions. It can be verified that
+the *t* values indicate the time of changes. 
+
+### new update: sampler class
+I think there is still something to be improved in the current project. Samplers are itself a class,
+but it should be a member of a sketch. That is, not only how the sketch are running, but also 
+how its data are collected, should be written together in the very beginning. 
+Anyway, I did not do that optimal coding, but used a naive and rather dumb way. But it is enough
+for me to use. If anyone would like to improve let him do it.
+current tasks only include:
+
+    -logscale sampling: for time from *2^0, 2^0.1, ..., 2^10* sample what is the value of Mtg at the time.
+    -onlylast sampling: sample for sample the value in the last iteration
+    -fail sample: sample a quantity acrossing many rounds.

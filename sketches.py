@@ -1981,6 +1981,151 @@ class SuperCompression134Sketch(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch):
         self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
 
 
+class SuperCompression128Sketch(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch):
+    def __init__(self, pN, pverbos=0, pcolor='orange', pname="SupComp128"):
+        mantbit = 8
+        expbit = 6
+        pm = 37
+        pq = 2.91
+        super(SuperCompression128Sketch, self).__init__(pm, pq, pN, pverbos, pcolor, pname)
+        self.mantbit = mantbit
+        self.expbit = expbit
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
+        self.snapshotLen += 1
+        self.snapshotColStr += ["truncMtg"]
+        self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
+        self.snapshotHist = np.zeros((SnapMaxChange, self.snapshotLen))
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = []
+            if self.verbos != 0:
+                cList.append(c)
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            if k == self.states[c] + 1:
+                if self.tension[c] == 1:
+                    self.bitmap[c] = 0
+            else:
+                self.bitmap[c] = 1
+            self.tension[c] = 1
+            self.states[c] = k
+
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c - i)
+                    self.bitmap[c - i] = 1
+                    self.tension[c - i] = 0
+                if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c + i)
+                    self.bitmap[c + i] = 1
+                    self.tension[c + i] = 0
+                if k - i * self.diffbd < 0:
+                    break
+            belowProbSum = np.dot(np.power(1/self.q, self.states + self.offset - self.tension - 1), self.bitmap) * (1 - 1/self.q)
+            self.updateA(belowProbSum + np.sum(np.power(1/self.q, self.states + self.offset)))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k == self.states[c] - self.tension[c] and self.bitmap[c] == 1:
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            self.bitmap[c] = 0
+            self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k + 1 - self.offset[c])))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(SuperCompression128Sketch, self).refresh()
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
+
+
+class SuperCompression128_noUnifOffs_Sketch(AdaLazyCtnPCSA_Ctn2bit_Board1bit_Sketch):
+    def __init__(self, pN, pverbos=0, pcolor='orange', pname="SupComp128-nooffset"):
+        mantbit = 8
+        expbit = 6
+        pm = 37
+        pq = 2.91
+        super(SuperCompression128_noUnifOffs_Sketch, self).__init__(pm, pq, pN, pverbos, pcolor, pname)
+        self.mantbit = mantbit
+        self.expbit = expbit
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
+        self.snapshotLen += 1
+        self.snapshotColStr += ["truncMtg"]
+        self.snapshot = np.zeros(self.snapshotLen, dtype=np.float64)
+        self.snapshotHist = np.zeros((SnapMaxChange, self.snapshotLen))
+        self.offset = self.sawtoffset.copy()
+
+    def update(self, c, k, t):
+        if k > self.states[c]:
+            cList = []
+            if self.verbos != 0:
+                cList.append(c)
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            if k == self.states[c] + 1:
+                if self.tension[c] == 1:
+                    self.bitmap[c] = 0
+            else:
+                self.bitmap[c] = 1
+            self.tension[c] = 1
+            self.states[c] = k
+
+            for i in range(1, CurtainUpbd):
+                if c - i >= 0 and self.states[c - i] + self.sawtoffset[c - i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c - i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c - i)
+                    self.bitmap[c - i] = 1
+                    self.tension[c - i] = 0
+                if c + i < self.m and self.states[c + i] + self.sawtoffset[c + i] < k + self.sawtoffset[c] - i * self.diffbd:
+                    self.states[c + i] = k - i * self.diffbd + self.sawtoffset[c] - self.sawtoffset[c - i]
+                    if self.verbos != 0:
+                        cList.append(c + i)
+                    self.bitmap[c + i] = 1
+                    self.tension[c + i] = 0
+                if k - i * self.diffbd < 0:
+                    break
+            belowProbSum = np.dot(np.power(1/self.q, self.states + self.offset - self.tension - 1), self.bitmap) * (1 - 1/self.q)
+            self.updateA(belowProbSum + np.sum(np.power(1/self.q, self.states + self.offset)))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, cList
+        elif k == self.states[c] - self.tension[c] and self.bitmap[c] == 1:
+            self.updateMtg()
+            self.truncMtg = truncate(x=self.truncMtg+self.invrega, mantbit=self.mantbit, expbit=self.expbit)
+            self.bitmap[c] = 0
+            self.updateA(self.a - (1 - 1 / self.q) * (np.power(self.q, -k + 1 - self.offset[c])))
+            if self.verbos != 0:
+                self.updateSnapshot(t, c, k, [self.truncMtg])
+                self.runningHistNewcontent = np.vstack((self.bitmap, self.tension)).transpose()
+            else:
+                self.t = t
+            return True, [c]
+        else:
+            return False, []
+
+    def refresh(self):
+        super(SuperCompression128_noUnifOffs_Sketch, self).refresh()
+        self.truncMtg = truncate(x=self.Mtg, mantbit=self.mantbit, expbit=self.expbit)
+
+
 # def updategen(usketch:Sketch):
 #     if type(usketch) == CurtainPCSASketch:
 #         assert hasattr(usketch, "offset")
