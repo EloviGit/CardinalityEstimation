@@ -8,7 +8,20 @@ The python scripts runs simulations to compare the performance of our sketches.
 By performance, we mean given the same space, how large is the estimation given by those
 sketches.
 
-totalling running history and figure files are too large to be uploaded.
+totalling running history and figure files are too large to be uploaded. They would be output by the scripts.
+
+
+### new update: some instructions for you to use the code.
+
+Firstly, I am sorry that the code is not very clean and well organized, because I had planned to use this code for myself. 
+
+The basic design is: each sketch is written as a derived class of the `Sketch` class in the `sketches` file, including the sketches in our paper, but also some failed and abandoned designs.
+
+A sketch object may contain many information, but usually we only need the estimation, so we use `Sampler` to collect the data and write them into a csv file. Derived classes of samplers in file `samplers` does different jobs, for example, sometimes one need the whole history, but sometimes only the last estimation.
+
+File `newsimu.py` carries out the simulation. The history data of each sketch is recorded in a single file, and file `newcong` congregates data of different sketches into a single csv file. The `freeplot.py` plots figures from data.
+
+File `utils.py` contains some utilization functions. File `integral_hll.py` was designed to calculate the integral described in the hll paper and file `tunning.py` was used for choosing a better parameter for Curtain Sketch, so they are less relevant to this project.
 
 ### new update: how to simulate 1e20 insertions efficiently.
 A fact is, no matter what sketch they is used, the final state of all the sketches are
